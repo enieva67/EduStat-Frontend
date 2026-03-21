@@ -6,12 +6,20 @@ class GraficoMediaAritmetica extends StatelessWidget {
   final List<double> datos;
   final double media;
   final String contexto;
+  
+  // NUEVAS VARIABLES DINÁMICAS (Con textos por defecto para la Media)
+  final String titulo;
+  final String subtitulo;
+  final String etiquetaLinea;
 
   const GraficoMediaAritmetica({
     super.key,
     required this.datos,
     required this.media,
     required this.contexto,
+    this.titulo = "Visualización: El Punto de Equilibrio",
+    this.subtitulo = "Cada punto azul es un paciente. La línea roja (Media) equilibra el peso.",
+    this.etiquetaLinea = "Media",
   });
 
   @override
@@ -30,53 +38,35 @@ class GraficoMediaAritmetica extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.teal.withOpacity(0.3)),
         boxShadow:[
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 10,
-            spreadRadius: 2,
-          )
+          BoxShadow(color: Colors.grey.withOpacity(0.1), blurRadius: 10, spreadRadius: 2)
         ]
       ),
       child: Column(
         children:[
-          const Text(
-            "Visualización: El Punto de Equilibrio",
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.teal),
-          ),
+          // USAMOS LAS VARIABLES DINÁMICAS AQUÍ
+          Text(titulo, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.teal)),
           const SizedBox(height: 5),
-          const Text(
-            "Cada punto azul es un paciente. La línea roja (Media) equilibra el peso.",
-            style: TextStyle(fontSize: 12, color: Colors.grey),
-          ),
+          Text(subtitulo, style: const TextStyle(fontSize: 12, color: Colors.grey), textAlign: TextAlign.center),
           const SizedBox(height: 20),
+          
           Expanded(
-            // USAMOS LINECHART PARA PODER DIBUJAR LA LÍNEA VERTICAL ROJA
             child: LineChart(
               LineChartData(
-                minX: minX,
-                maxX: maxX,
-                minY: -1, // Damos espacio arriba y abajo
-                maxY: 1,
+                minX: minX, maxX: maxX, minY: -1, maxY: 1,
                 
-                // LA MAGIA 1: Dibujamos la línea vertical de la media
                 extraLinesData: ExtraLinesData(
                   verticalLines:[
                     VerticalLine(
-                      x: media,
-                      color: Colors.redAccent,
-                      strokeWidth: 3,
-                      dashArray: [5, 5], // Línea punteada
+                      x: media, color: Colors.redAccent, strokeWidth: 3, dashArray: [5, 5],
                       label: VerticalLineLabel(
-                        show: true,
-                        alignment: Alignment.topRight,
-                        padding: const EdgeInsets.only(bottom: 20),
+                        show: true, alignment: Alignment.topRight, padding: const EdgeInsets.only(bottom: 20),
                         style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 14),
-                        labelResolver: (line) => "   Media: ${media.toStringAsFixed(2)}",
+                        // USAMOS LA ETIQUETA DINÁMICA AQUÍ
+                        labelResolver: (line) => "$etiquetaLinea: ${media.toStringAsFixed(2)}",
                       ),
                     )
                   ]
                 ),
-
                 // LA MAGIA 2: Engañamos al LineChart para que parezca un Dot Plot
                 lineBarsData:[
                   LineChartBarData(

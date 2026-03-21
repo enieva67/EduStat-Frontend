@@ -8,7 +8,7 @@ import 'widgets/grafico_media.dart';
 import 'widgets/grafico_histograma.dart';
 import 'package:flutter/services.dart'; // ¡NUEVO: Para el Portapapeles!
 import 'widgets/grafico_curva_normal.dart'; // <--- IMPORTANTE
-
+import 'widgets/grafico_dispersion.dart';
 void main() {
   runApp(const EduStatApp());
 }
@@ -46,18 +46,34 @@ class _MainScreenState extends State<MainScreen> {
     'moda': 'Moda (Frecuente)',
     'varianza': 'Varianza (Dispersión)',
     'percentil': 'Percentiles (Posición)',
-    'puntaje_z': 'Puntaje Z (Campana)' // <--- NUEVO
+    'puntaje_z': 'Puntaje Z (Campana)', // <--- NUEVO
+    'pearson': 'r de Pearson',
+    'spearman': 'Rho de Spearman',
+    'phi': 'Coeficiente Phi',
+    'intervalo_confianza': 'Intervalos de Confianza (Media)', // <--- NUEVA
   };
 
   // NUEVO: Controladores para el formulario de Puntaje Z
   final TextEditingController _zMediaCtrl = TextEditingController(text: "100");
   final TextEditingController _zDesviacionCtrl = TextEditingController(text: "15");
   String _tipoAreaZ = 'menor'; // Por defecto pinta a la izquierda
-
   final TextEditingController _zPacienteCtrl = TextEditingController(text: "118");
   final TextEditingController _zPaciente2Ctrl = TextEditingController(text: "130"); // <--- NUEVO
+  bool _tengoPuntajeX = true; // Interruptor: True = Normal, False = Proceso Inverso
+  final TextEditingController _zArea1Ctrl = TextEditingController(text: "95");
+  final TextEditingController _zArea2Ctrl = TextEditingController(text: "99");
+// Controladores para Bivariada (Correlación)
+  final TextEditingController _bivNombreXCtrl = TextEditingController(text: "Horas Estudio");
+  final TextEditingController _bivNombreYCtrl = TextEditingController(text: "Calificación");
 
+  final TextEditingController _bivDatosXCtrl = TextEditingController(text: "2; 4; 5; 8; 10");
+  final TextEditingController _bivDatosYCtrl = TextEditingController(text: "40; 60; 65; 85; 95");
+  // CONTROLADORES DE INFERENCIA
+  final TextEditingController _icMediaCtrl = TextEditingController(text: "105.5");
+  final TextEditingController _icDesvCtrl = TextEditingController(text: "15.0");
 
+  final TextEditingController _icNCtrl = TextEditingController(text: "25");
+  String _icConfianza = '95.0'; // Selector de Confianza
   // NUEVO: Variable para guardar qué percentil quiere el usuario (P1 a P99)
   double _kPercentil = 50; 
   final List<Map<String, TextEditingController>> _filasAgrupadas =[
@@ -70,6 +86,18 @@ class _MainScreenState extends State<MainScreen> {
   void initState() {
     super.initState();
     wsService.connect();
+    
+    // NUEVO: Escuchamos el canal de emergencias en tiempo real
+    wsService.serverError.addListener(() {
+      final String? errorMsg = wsService.serverError.value;
+      if (errorMsg != null) {
+        // Usamos la misma función que ya teníamos, pero le ponemos un ícono de error
+        _mostrarMensaje("❌ $errorMsg");
+        
+        // Limpiamos el buzón para que vuelva a avisar si ocurre el MISMO error de nuevo
+        wsService.serverError.value = null; 
+      }
+    });
   }
 
   @override
@@ -195,7 +223,39 @@ class _MainScreenState extends State<MainScreen> {
     }
     return datosLimpios;
   }
+Future<void> _pegarDatosBivariados() async {
+    ClipboardData? data = await Clipboard.getData(Clipboard.kTextPlain);
+    if (data == null || data.text == null) return;
 
+    final List<double> listX = List.empty(growable: true);
+    final List<double> listY = List.empty(growable: true);
+    
+    // Dividimos por filas de Excel
+    List<String> lineas = data.text!.trim().split('\n');
+
+    for (String linea in lineas) {
+      // Separamos por Tabulación (Excel) o Punto y Coma (CSV)
+      List<String> celdas = linea.split(RegExp(r'[\t;]'));
+      if (celdas.length >= 2) {
+        double? x = double.tryParse(celdas[0].replaceAll(',', '.').trim());
+        double? y = double.tryParse(celdas[1].replaceAll(',', '.').trim());
+        if (x != null && y != null) {
+          listX.add(x);
+          listY.add(y);
+        }
+      }
+    }
+
+    if (listX.isNotEmpty) {
+      setState(() {
+        _bivDatosXCtrl.text = listX.join('; ');
+        _bivDatosYCtrl.text = listY.join('; ');
+      });
+      _mostrarMensaje("¡Éxito! Se pegaron ${listX.length} pares de datos.");
+    } else {
+      _mostrarMensaje("Error: No se detectaron 2 columnas numéricas juntas.");
+    }
+  }
   // 2. PEGADO INTELIGENTE: Pega, limpia y formatea la caja de texto al instante
   Future<void> _pegarDatosSinAgrupar() async {
     ClipboardData? data = await Clipboard.getData(Clipboard.kTextPlain);
@@ -215,7 +275,30 @@ class _MainScreenState extends State<MainScreen> {
       }
     }
   }
+void _enviarCorrelacion() {
+    List<double> xList = _extraerNumeros(_bivDatosXCtrl.text);
+    List<double> yList = _extraerNumeros(_bivDatosYCtrl.text);
 
+    if (xList.length != yList.length || xList.length < 2) {
+      _mostrarMensaje("Error: X e Y deben tener la misma cantidad de números (Mínimo 2).");
+      return;
+    }
+
+    setState(() {
+      _bivDatosXCtrl.text = xList.join('; ');
+      _bivDatosYCtrl.text = yList.join('; ');
+    });
+
+    final payload = {
+      "id": "calculo_01",
+      "accion": "calcular_${_medidaSeleccionada}", // Ej: calcular_pearson
+      "parametros": {
+        "x": xList, "y": yList,
+        "ctx_x": _bivNombreXCtrl.text, "ctx_y": _bivNombreYCtrl.text
+      }
+    };
+    wsService.sendJson(payload);
+  }
   // 3. ENVÍO AL BACKEND: Formatea la caja antes de enviar por si el usuario tipeó
   void _enviarDatosSinAgrupar() {
     // Volvemos a limpiar por si el usuario escribió algo a mano
@@ -238,32 +321,31 @@ class _MainScreenState extends State<MainScreen> {
   void _enviarPuntajeZ() {
     double? media = double.tryParse(_zMediaCtrl.text.replaceAll(',', '.'));
     double? desviacion = double.tryParse(_zDesviacionCtrl.text.replaceAll(',', '.'));
-    double? xVal = double.tryParse(_zPacienteCtrl.text.replaceAll(',', '.'));
-    
-    // Leemos X2 de forma segura
-    double? x2Val;
-    if (_tipoAreaZ == 'entre_dos_valores') {
-      x2Val = double.tryParse(_zPaciente2Ctrl.text.replaceAll(',', '.'));
-      if (x2Val == null) {
-        _mostrarMensaje("Ingresa un número válido en el Segundo Puntaje (X2).");
-        return;
-      }
+    if (media == null || desviacion == null) return;
+
+    if (_tengoPuntajeX) {
+      // RUTA NORMAL: Tengo X y quiero el Área
+      double? xVal = double.tryParse(_zPacienteCtrl.text.replaceAll(',', '.'));
+      double? x2Val = _tipoAreaZ == 'entre_dos_valores' ? double.tryParse(_zPaciente2Ctrl.text.replaceAll(',', '.')) : null;
+
+      if (xVal == null) { _mostrarMensaje("Ingresa un Puntaje X válido."); return; }
+
+      wsService.sendJson({
+        "id": "calculo_01", "accion": "calcular_puntaje_z",
+        "parametros": { "media": media, "desviacion": desviacion, "x": xVal, "tipo_area": _tipoAreaZ, "x2": x2Val }
+      });
+    } else {
+      // RUTA INVERSA: Tengo el Área y quiero la X
+      double? area1 = double.tryParse(_zArea1Ctrl.text.replaceAll(',', '.'));
+      double? area2 = _tipoAreaZ == 'entre_dos_valores' ? double.tryParse(_zArea2Ctrl.text.replaceAll(',', '.')) : null;
+
+      if (area1 == null) { _mostrarMensaje("Ingresa un Área válida (Ej: 95)."); return; }
+
+      wsService.sendJson({
+        "id": "calculo_01", "accion": "calcular_x_desde_area",
+        "parametros": { "media": media, "desviacion": desviacion, "area1": area1, "tipo_area": _tipoAreaZ, "area2": area2 }
+      });
     }
-
-    if (media == null || desviacion == null || xVal == null) return;
-
-    final payload = {
-      "id": "calculo_01",
-      "accion": "calcular_puntaje_z",
-      "parametros": {
-        "media": media,
-        "desviacion": desviacion,
-        "x": xVal,
-        "tipo_area": _tipoAreaZ,
-        "x2": x2Val // <--- ENVIAMOS EL NUEVO DATO (Puede ser null)
-      }
-    };
-    wsService.sendJson(payload);
   }
   // Función auxiliar para mostrar notificaciones (SnackBar)
   void _mostrarMensaje(String mensaje) {
@@ -285,13 +367,34 @@ class _MainScreenState extends State<MainScreen> {
       wsService.procesarArchivo(base64Encode(bytes), result.files.single.name);
     }
   }
+  void _enviarIntervaloConfianza() {
+    double? media = double.tryParse(_icMediaCtrl.text.replaceAll(',', '.'));
+    double? desviacion = double.tryParse(_icDesvCtrl.text.replaceAll(',', '.'));
+    int? n = int.tryParse(_icNCtrl.text);
+
+    if (media == null || desviacion == null || n == null) {
+      _mostrarMensaje("❌ Error: Ingresa números válidos en todos los campos.");
+      return;
+    }
+
+    final payload = {
+      "id": "calculo_01",
+      "accion": "calcular_intervalo_confianza",
+      "parametros": {
+        "media": media,
+        "desviacion": desviacion,
+        "n": n,
+        "confianza": double.parse(_icConfianza)
+      }
+    };
+    wsService.sendJson(payload);
+  }
 
   @override
   Widget build(BuildContext context) {
     // Definimos la acción para el nivel 1
     String accionSinAgrupar = 'calcular_${_medidaSeleccionada}_sin_agrupar';
-    String nombreMedida = _opcionesMedida[_medidaSeleccionada]!;
-
+    String nombreMedida = _opcionesMedida[_medidaSeleccionada] ?? 'Medida Seleccionada';
     return DefaultTabController(
       length: 2,
       child: Scaffold(
@@ -316,6 +419,51 @@ class _MainScreenState extends State<MainScreen> {
             )
           ],
         ),
+        drawer: Drawer(
+          child: ListView(
+            padding: EdgeInsets.zero,
+            children:[
+              const DrawerHeader(
+                decoration: BoxDecoration(color: Colors.teal),
+                child: Text('Módulos de EduStat', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+              ),
+              ExpansionTile(
+                leading: const Icon(Icons.bar_chart),
+                title: const Text('1. Estadística Descriptiva', style: TextStyle(fontWeight: FontWeight.bold)),
+                children:[
+                  ListTile(title: const Text("Media"), onTap: () { setState(() => _medidaSeleccionada = 'media'); Navigator.pop(context); }),
+                  ListTile(title: const Text("Mediana"), onTap: () { setState(() => _medidaSeleccionada = 'mediana'); Navigator.pop(context); }),
+                  ListTile(title: const Text("Moda"), onTap: () { setState(() => _medidaSeleccionada = 'moda'); Navigator.pop(context); }),
+                  ListTile(title: const Text("Varianza"), onTap: () { setState(() => _medidaSeleccionada = 'varianza'); Navigator.pop(context); }),
+                  ListTile(title: const Text("Percentiles"), onTap: () { setState(() => _medidaSeleccionada = 'percentil'); Navigator.pop(context); }),
+                ],
+              ),
+              ExpansionTile(
+                leading: const Icon(Icons.analytics),
+                title: const Text('2. Curva Normal', style: TextStyle(fontWeight: FontWeight.bold)),
+                children:[
+                  ListTile(title: const Text("Puntaje Z y Probabilidades"), onTap: () { setState(() => _medidaSeleccionada = 'puntaje_z'); Navigator.pop(context); }),
+                ],
+              ),
+              ExpansionTile(
+                leading: const Icon(Icons.psychology),
+                title: const Text('3. Estadística Inferencial', style: TextStyle(fontWeight: FontWeight.bold)),
+                children:[
+                  ListTile(title: const Text("Intervalos de Confianza (Media)"), onTap: () { setState(() => _medidaSeleccionada = 'intervalo_confianza'); Navigator.pop(context); }),
+                ],
+              ),
+              ExpansionTile(
+                leading: const Icon(Icons.scatter_plot),
+                title: const Text('4. Correlación (Bivariada)', style: TextStyle(fontWeight: FontWeight.bold)),
+                children:[
+                  ListTile(title: const Text("r de Pearson (Paramétrica)"), onTap: () { setState(() => _medidaSeleccionada = 'pearson'); Navigator.pop(context); }),
+                  ListTile(title: const Text("Rho de Spearman (No Paramétrica)"), onTap: () { setState(() => _medidaSeleccionada = 'spearman'); Navigator.pop(context); }),
+                  ListTile(title: const Text("Coeficiente Phi (Dicotómicas)"), onTap: () { setState(() => _medidaSeleccionada = 'phi'); Navigator.pop(context); }),
+                ],
+              ),
+            ],
+          ),
+        ),
         body: Row(
           children:[
             // PANEL IZQUIERDO
@@ -325,127 +473,104 @@ class _MainScreenState extends State<MainScreen> {
                 color: Colors.white,
                 child: Column(
                   children:[
-                    // LA NUEVA BOTONERA INTELIGENTE (ChoiceChips)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16.0),
-                      decoration: BoxDecoration(color: Colors.teal.withOpacity(0.05), border: Border(bottom: BorderSide(color: Colors.teal.withOpacity(0.2)))),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children:[
-                          const Text("¿Qué deseas aprender hoy?", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.teal)),
-                          const SizedBox(height: 10),
-                          Wrap(
-                            spacing: 8.0,
-                            runSpacing: 8.0,
-                            children: _opcionesMedida.entries.map((entry) {
-                              return ChoiceChip(
-                                label: Text(entry.value, style: TextStyle(color: _medidaSeleccionada == entry.key ? Colors.white : Colors.black87)),
-                                selectedColor: Colors.teal,
-                                selected: _medidaSeleccionada == entry.key,
-                                onSelected: (bool selected) {
-                                  if (selected) setState(() => _medidaSeleccionada = entry.key);
-                                },
-                              );
-                            }).toList(),
+                    
+                    // CONTROL MAESTRO DE PERCENTILES (Sobreviviente de la limpieza)
+                    // Solo aparecerá si el estudiante selecciona "Percentiles" en el Menú Lateral
+                    if (_medidaSeleccionada == 'percentil')
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16.0),
+                        decoration: BoxDecoration(color: Colors.teal.withOpacity(0.05), border: Border(bottom: BorderSide(color: Colors.teal.withOpacity(0.2)))),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.withOpacity(0.05), 
+                            borderRadius: BorderRadius.circular(12), 
+                            border: Border.all(color: Colors.amber.withOpacity(0.5), width: 2)
                           ),
-                          
-                          // NUEVO: SI ELIGE PERCENTILES, MOSTRAMOS EL CONTROL MAESTRO
-                          if (_medidaSeleccionada == 'percentil') ...[
-                            const SizedBox(height: 20),
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: Colors.amber.withOpacity(0.05), 
-                                borderRadius: BorderRadius.circular(12), 
-                                border: Border.all(color: Colors.amber.withOpacity(0.5), width: 2)
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children:[
+                              // Fila superior: Título y Valor actual
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children:[
-                                  // Fila superior: Título y Valor actual
                                   Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children:[
-                                      Row(
-                                        children: const[
-                                          Icon(Icons.straighten, color: Colors.amber, size: 24),
-                                          SizedBox(width: 8),
-                                          Text("Posición a buscar:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                                        ],
-                                      ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                        decoration: BoxDecoration(color: Colors.amber, borderRadius: BorderRadius.circular(20)),
-                                        child: Text("P${_kPercentil.toInt()}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-                                      )
+                                    children: const[
+                                      Icon(Icons.straighten, color: Colors.amber, size: 24),
+                                      SizedBox(width: 8),
+                                      Text("Posición a buscar:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                                     ],
                                   ),
-                                  const SizedBox(height: 15),
-                                  
-                                  // Fila central: El Slider con botones de precisión
-                                  Row(
-                                    children:[
-                                      IconButton(
-                                        icon: const Icon(Icons.remove_circle_outline, color: Colors.amber),
-                                        tooltip: "Restar 1",
-                                        onPressed: _kPercentil > 1 ? () => setState(() => _kPercentil--) : null,
-                                      ),
-                                      Expanded(
-                                        child: Slider(
-                                          value: _kPercentil,
-                                          min: 1, 
-                                          max: 99, 
-                                          activeColor: Colors.amber,
-                                          inactiveColor: Colors.amber.withOpacity(0.3),
-                                          label: "P${_kPercentil.toInt()}",
-                                          onChanged: (val) => setState(() => _kPercentil = val.roundToDouble()),
-                                        ),
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(Icons.add_circle_outline, color: Colors.amber),
-                                        tooltip: "Sumar 1",
-                                        onPressed: _kPercentil < 99 ? () => setState(() => _kPercentil++) : null,
-                                      ),
-                                    ],
-                                  ),
-                                  
-                                  const SizedBox(height: 10),
-                                  
-                                  // Fila inferior: Botones didácticos de atajo
-                                  const Text("Atajos comunes (Cuartiles):", style: TextStyle(fontSize: 12, color: Colors.grey, fontStyle: FontStyle.italic)),
-                                  const SizedBox(height: 8),
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
-                                    children:[
-                                      ActionChip(
-                                        label: const Text("Q1 (P25)"), 
-                                        backgroundColor: Colors.white,
-                                        side: BorderSide(color: _kPercentil == 25 ? Colors.amber : Colors.grey.shade300),
-                                        onPressed: () => setState(() => _kPercentil = 25),
-                                      ),
-                                      ActionChip(
-                                        label: const Text("Mediana (P50)"), 
-                                        backgroundColor: Colors.white,
-                                        side: BorderSide(color: _kPercentil == 50 ? Colors.amber : Colors.grey.shade300),
-                                        onPressed: () => setState(() => _kPercentil = 50),
-                                      ),
-                                      ActionChip(
-                                        label: const Text("Q3 (P75)"), 
-                                        backgroundColor: Colors.white,
-                                        side: BorderSide(color: _kPercentil == 75 ? Colors.amber : Colors.grey.shade300),
-                                        onPressed: () => setState(() => _kPercentil = 75),
-                                      ),
-                                    ],
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                    decoration: BoxDecoration(color: Colors.amber, borderRadius: BorderRadius.circular(20)),
+                                    child: Text("P${_kPercentil.toInt()}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
                                   )
                                 ],
                               ),
-                            )
-                          ]
-                        ],
+                              const SizedBox(height: 15),
+                              
+                              // Fila central: El Slider con botones de precisión
+                              Row(
+                                children:[
+                                  IconButton(
+                                    icon: const Icon(Icons.remove_circle_outline, color: Colors.amber),
+                                    tooltip: "Restar 1",
+                                    onPressed: _kPercentil > 1 ? () => setState(() => _kPercentil--) : null,
+                                  ),
+                                  Expanded(
+                                    child: Slider(
+                                      value: _kPercentil,
+                                      min: 1, 
+                                      max: 99, 
+                                      activeColor: Colors.amber,
+                                      inactiveColor: Colors.amber.withOpacity(0.3),
+                                      label: "P${_kPercentil.toInt()}",
+                                      onChanged: (val) => setState(() => _kPercentil = val.roundToDouble()),
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.add_circle_outline, color: Colors.amber),
+                                    tooltip: "Sumar 1",
+                                    onPressed: _kPercentil < 99 ? () => setState(() => _kPercentil++) : null,
+                                  ),
+                                ],
+                              ),
+                              
+                              const SizedBox(height: 10),
+                              
+                              // Fila inferior: Botones didácticos de atajo
+                              const Text("Atajos comunes (Cuartiles):", style: TextStyle(fontSize: 12, color: Colors.grey, fontStyle: FontStyle.italic)),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children:[
+                                  ActionChip(
+                                    label: const Text("Q1 (P25)"), 
+                                    backgroundColor: Colors.white,
+                                    side: BorderSide(color: _kPercentil == 25 ? Colors.amber : Colors.grey.shade300),
+                                    onPressed: () => setState(() => _kPercentil = 25),
+                                  ),
+                                  ActionChip(
+                                    label: const Text("Mediana (P50)"), 
+                                    backgroundColor: Colors.white,
+                                    side: BorderSide(color: _kPercentil == 50 ? Colors.amber : Colors.grey.shade300),
+                                    onPressed: () => setState(() => _kPercentil = 50),
+                                  ),
+                                  ActionChip(
+                                    label: const Text("Q3 (P75)"), 
+                                    backgroundColor: Colors.white,
+                                    side: BorderSide(color: _kPercentil == 75 ? Colors.amber : Colors.grey.shade300),
+                                    onPressed: () => setState(() => _kPercentil = 75),
+                                  ),
+                                ],
+                              )
+                            ],
+                          ),
+                        )
                       ),
-                    ),
                     
                     // LAS PESTAÑAS (TabBarView)
                     Expanded(
@@ -465,57 +590,79 @@ class _MainScreenState extends State<MainScreen> {
                                 children:[
                                   const Text("Datos de la Población y el Paciente", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                                   const SizedBox(height: 15),
-                                  TextField(
-                                    controller: _zMediaCtrl,
-                                    decoration: const InputDecoration(labelText: "Media Poblacional (μ)", prefixIcon: Icon(Icons.balance), border: OutlineInputBorder()),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  TextField(
-                                    controller: _zDesviacionCtrl,
-                                    decoration: const InputDecoration(labelText: "Desviación Estándar (σ)", prefixIcon: Icon(Icons.compare_arrows), border: OutlineInputBorder()),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  TextField(
-                                    controller: _zPacienteCtrl,
-                                    decoration: const InputDecoration(labelText: "Puntaje del Paciente (X)", prefixIcon: Icon(Icons.person), border: OutlineInputBorder(), filled: true, fillColor: Colors.amberAccent),
-                                  ),
-                                  const SizedBox(height: 10),
-
-                                    // UX DE LUJO: Mostrar X2 solo si elige "entre dos valores"
-                                    if (_tipoAreaZ == 'entre_dos_valores') ...[
-                                      TextField(
-                                        controller: _zPaciente2Ctrl,
-                                        decoration: const InputDecoration(labelText: "Segundo Puntaje (X2)", prefixIcon: Icon(Icons.person_add), border: OutlineInputBorder(), filled: true, fillColor: Colors.amberAccent),
+                                  
+                                  // EL INTERRUPTOR: ¿Qué dato tienes?
+                                  Row(
+                                    children:[
+                                      const Text("¿Qué dato tienes?", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.teal)),
+                                      const SizedBox(width: 15),
+                                      Switch(
+                                        value: _tengoPuntajeX,
+                                        activeColor: Colors.teal,
+                                        inactiveThumbColor: Colors.amber,
+                                        inactiveTrackColor: Colors.amber.withOpacity(0.3),
+                                        onChanged: (val) => setState(() => _tengoPuntajeX = val),
                                       ),
-                                      const SizedBox(height: 10),
+                                      Text(_tengoPuntajeX ? "Tengo el Puntaje (X)" : "Tengo el Área (%)", style: TextStyle(color: _tengoPuntajeX ? Colors.teal : Colors.amber.shade800, fontWeight: FontWeight.bold)),
                                     ],
+                                  ),
                                   const SizedBox(height: 15),
                                   
+                                  // DATOS POBLACIONALES FIJOS
+                                  TextField(controller: _zMediaCtrl, decoration: const InputDecoration(labelText: "Media Poblacional (μ)", prefixIcon: Icon(Icons.balance), border: OutlineInputBorder(), isDense: true)),
+                                  const SizedBox(height: 10),
+                                  TextField(controller: _zDesviacionCtrl, decoration: const InputDecoration(labelText: "Desviación Estándar (σ)", prefixIcon: Icon(Icons.compare_arrows), border: OutlineInputBorder(), isDense: true)),
+                                  const SizedBox(height: 15),
 
-                                    // NUEVO SELECTOR DIDÁCTICO DE ÁREAS
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                                      decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.grey.shade400), borderRadius: BorderRadius.circular(4)),
-                                      child: DropdownButtonHideUnderline(
-                                        child: DropdownButton<String>(
-                                          isExpanded: true,
-                                          value: _tipoAreaZ,
-                                          icon: const Icon(Icons.arrow_drop_down, color: Colors.teal),
-                                          items: const[
-                                            DropdownMenuItem(value: 'menor', child: Text("Pintar: Área Menor a Z (Cola Izquierda)")),
-                                            DropdownMenuItem(value: 'mayor', child: Text("Pintar: Área Mayor a Z (Cola Derecha)")),
-                                            DropdownMenuItem(value: 'entre_media', child: Text("Pintar: Centro (Entre Media y Z)")),
-                                            DropdownMenuItem(value: 'dos_colas', child: Text("Pintar: Extremos (Dos Colas)")),
-                                            DropdownMenuItem(value: 'entre_dos_valores', child: Text("Pintar: Entre dos puntajes (X1 y X2)")),
-                                          ],
-                                          onChanged: (val) {
-                                            if (val != null) setState(() => _tipoAreaZ = val);
-                                          },
-                                        ),
+                                  // EL SELECTOR DINÁMICO (Camaleónico)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                                    decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.grey.shade400), borderRadius: BorderRadius.circular(4)),
+                                    child: DropdownButtonHideUnderline(
+                                      child: DropdownButton<String>(
+                                        isExpanded: true, 
+                                        value: _tipoAreaZ,
+                                        icon: const Icon(Icons.arrow_drop_down, color: Colors.teal),
+                                        // MAGIA UX: Cambiamos los textos según el interruptor
+                                        items: _tengoPuntajeX 
+                                          ? const[
+                                              DropdownMenuItem(value: 'menor', child: Text("Buscar Puntaje (X): Que deja el Área a la Izquierda")),
+                                              DropdownMenuItem(value: 'mayor', child: Text("Buscar Puntaje (X): Que deja el Área a la Derecha")),
+                                              DropdownMenuItem(value: 'entre_media', child: Text("Buscar Puntaje (X): Con un Área desde el Centro")),
+                                              DropdownMenuItem(value: 'dos_colas', child: Text("Buscar Puntajes (±X): Que delimitan las Colas")),
+                                              DropdownMenuItem(value: 'entre_dos_valores', child: Text("Buscar Puntajes (X₁ y X₂): Dados dos percentiles")),
+                                            ]
+                                          : const[
+                                              DropdownMenuItem(value: 'menor', child: Text("Calcular: Área a la Izquierda de X")),
+                                              DropdownMenuItem(value: 'mayor', child: Text("Calcular: Área a la Derecha de X")),
+                                              DropdownMenuItem(value: 'entre_media', child: Text("Calcular: Área entre la Media y X")),
+                                              DropdownMenuItem(value: 'dos_colas', child: Text("Calcular: Área en los Extremos (±X)")),
+                                              DropdownMenuItem(value: 'entre_dos_valores', child: Text("Calcular: Área entre X₁ y X₂")),
+                                            ],
+                                        onChanged: (val) { if (val != null) setState(() => _tipoAreaZ = val); },
                                       ),
                                     ),
-                                    
+                                  ),
+                                  const SizedBox(height: 15),
+
+                                  // INPUTS DINÁMICOS CAMALEÓNICOS
+                                  if (_tengoPuntajeX) ...[
+                                    TextField(controller: _zPacienteCtrl, decoration: const InputDecoration(labelText: "Puntaje (X1)", prefixIcon: Icon(Icons.person), border: OutlineInputBorder(), isDense: true, filled: true, fillColor: Colors.tealAccent)),
+                                    if (_tipoAreaZ == 'entre_dos_valores') ...[
+                                      const SizedBox(height: 10),
+                                      TextField(controller: _zPaciente2Ctrl, decoration: const InputDecoration(labelText: "Segundo Puntaje (X2)", prefixIcon: Icon(Icons.person_add), border: OutlineInputBorder(), isDense: true, filled: true, fillColor: Colors.tealAccent)),
+                                    ]
+                                  ] else ...[
+                                    TextField(controller: _zArea1Ctrl, decoration: const InputDecoration(labelText: "Área o Probabilidad (Ej: 95 o 0.95)", prefixIcon: Icon(Icons.pie_chart), border: OutlineInputBorder(), isDense: true, filled: true, fillColor: Colors.amberAccent)),
+                                    if (_tipoAreaZ == 'entre_dos_valores') ...[
+                                      const SizedBox(height: 10),
+                                      TextField(controller: _zArea2Ctrl, decoration: const InputDecoration(labelText: "Segunda Área (Ej: 99)", prefixIcon: Icon(Icons.pie_chart_outline), border: OutlineInputBorder(), isDense: true, filled: true, fillColor: Colors.amberAccent)),
+                                    ]
+                                  ],
+
                                   const SizedBox(height: 20),
+                                  
+                                  // BOTÓN DE ACCIÓN FINAL
                                   SizedBox(
                                     width: double.infinity,
                                     child: ElevatedButton.icon(
@@ -527,7 +674,92 @@ class _MainScreenState extends State<MainScreen> {
                                   )
                                 ],
                               )
-
+                              // 2. MÓDULO CORRELACIONES (Bivariado)
+                              : ['pearson', 'spearman', 'phi'].contains(_medidaSeleccionada)
+                              ? Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children:[
+                                    Text("Correlación: ${_opcionesMedida[_medidaSeleccionada] ?? 'Bivariada'}", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                    const SizedBox(height: 15),
+                                    
+                                    Row(
+                                      children:[
+                                        Expanded(child: TextField(controller: _bivNombreXCtrl, decoration: const InputDecoration(labelText: "Nombre Variable X", isDense: true, border: OutlineInputBorder()))),
+                                        const SizedBox(width: 10),
+                                        Expanded(child: TextField(controller: _bivNombreYCtrl, decoration: const InputDecoration(labelText: "Nombre Variable Y", isDense: true, border: OutlineInputBorder()))),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 15),
+                                    
+                                    TextField(controller: _bivDatosXCtrl, maxLines: 2, decoration: const InputDecoration(labelText: "Datos de X (Separados por ; o pegados)", border: OutlineInputBorder(), filled: true, fillColor: Colors.white)),
+                                    const SizedBox(height: 10),
+                                    TextField(controller: _bivDatosYCtrl, maxLines: 2, decoration: const InputDecoration(labelText: "Datos de Y (Separados por ; o pegados)", border: OutlineInputBorder(), filled: true, fillColor: Colors.white)),
+                                    const SizedBox(height: 10),
+                                    
+                                    Wrap(
+                                      spacing: 10, alignment: WrapAlignment.end,
+                                      children:[
+                                        Tooltip(message: "Copia 2 columnas de Excel y pégalas", child: TextButton.icon(onPressed: _pegarDatosBivariados, icon: const Icon(Icons.content_paste, color: Colors.blueAccent), label: const Text("Pegar 2 Columnas de Excel"))),
+                                        TextButton.icon(onPressed: () { _bivDatosXCtrl.clear(); _bivDatosYCtrl.clear(); }, icon: const Icon(Icons.clear, color: Colors.redAccent), label: const Text("Limpiar")),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 15),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: ElevatedButton.icon(
+                                        icon: const Icon(Icons.scatter_plot),
+                                        label: const Padding(padding: EdgeInsets.all(12.0), child: Text("Analizar Correlación")),
+                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white),
+                                        onPressed: _enviarCorrelacion,
+                                      ),
+                                    )
+                                  ],
+                                )
+                                // 3. MÓDULO INFERENCIAL (¡NUEVO!)
+                              : _medidaSeleccionada == 'intervalo_confianza'
+                              ? Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children:[
+                                    const Text("Intervalo de Confianza (Media)", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.teal)),
+                                    const SizedBox(height: 15),
+                                    
+                                    TextField(controller: _icMediaCtrl, decoration: const InputDecoration(labelText: "Media Muestral (x̄)", prefixIcon: Icon(Icons.balance), border: OutlineInputBorder(), isDense: true)),
+                                    const SizedBox(height: 10),
+                                    TextField(controller: _icDesvCtrl, decoration: const InputDecoration(labelText: "Desviación Estándar (s o σ)", prefixIcon: Icon(Icons.compare_arrows), border: OutlineInputBorder(), isDense: true)),
+                                    const SizedBox(height: 10),
+                                    TextField(controller: _icNCtrl, decoration: const InputDecoration(labelText: "Tamaño de Muestra (n)", prefixIcon: Icon(Icons.group), border: OutlineInputBorder(), isDense: true)),
+                                    const SizedBox(height: 15),
+                                    
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                                      decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.grey.shade400), borderRadius: BorderRadius.circular(4)),
+                                      child: DropdownButtonHideUnderline(
+                                        child: DropdownButton<String>(
+                                          isExpanded: true, value: _icConfianza,
+                                          icon: const Icon(Icons.security, color: Colors.teal),
+                                          items: const[
+                                            DropdownMenuItem(value: '90.0', child: Text("Nivel de Confianza: 90%")),
+                                            DropdownMenuItem(value: '95.0', child: Text("Nivel de Confianza: 95% (Estándar)")),
+                                            DropdownMenuItem(value: '99.0', child: Text("Nivel de Confianza: 99% (Estricto)")),
+                                          ],
+                                          onChanged: (val) { if (val != null) setState(() => _icConfianza = val); },
+                                        ),
+                                      ),
+                                    ),
+                                    
+                                    const SizedBox(height: 20),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: ElevatedButton.icon(
+                                        icon: const Icon(Icons.psychology),
+                                        label: const Padding(padding: EdgeInsets.all(12.0), child: Text("Calcular Intervalo de Confianza", style: TextStyle(fontSize: 16))),
+                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.teal.shade700, foregroundColor: Colors.white, elevation: 3),
+                                        onPressed: _enviarIntervaloConfianza,
+                                      ),
+                                    )
+                                  ],
+                                )
+                                
                             : Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children:[
@@ -748,6 +980,33 @@ class _MainScreenState extends State<MainScreen> {
                 builder: (context, result, child) {
                   if (result == null) return const Center(child: Text("Selecciona un nivel o sube un archivo para ver la magia.", style: TextStyle(fontSize: 18, color: Colors.grey)));
                   List<dynamic> pasos = result['pasos'] ??[];
+
+                  // -----------------------------------------------------------------
+                  // LÓGICA DE ESTADO ESTRICTA: Leemos qué calculó Python realmente
+                  // -----------------------------------------------------------------
+                  String simboloRespuesta = result['simbolo_estadistico'] ?? '';
+                  bool mostrarGraficoPuntos = simboloRespuesta.contains('\\bar{x}') || 
+                                              simboloRespuesta.contains('Me') || 
+                                              simboloRespuesta.contains('P_');
+
+                  String tituloGrafico = "Visualización";
+                  String subtituloGrafico = "";
+                  String etiquetaGrafico = "Valor";
+
+                  if (simboloRespuesta.contains('\\bar{x}')) {
+                    tituloGrafico = "El Punto de Equilibrio (Media)";
+                    subtituloGrafico = "La línea roja (Media) equilibra el peso de todos los pacientes.";
+                    etiquetaGrafico = "Media";
+                  } else if (simboloRespuesta.contains('Me')) {
+                    tituloGrafico = "El Centro Exacto (Mediana)";
+                    subtituloGrafico = "La línea roja divide a los pacientes exactamente en dos mitades (50% y 50%).";
+                    etiquetaGrafico = "Mediana";
+                  } else if (simboloRespuesta.contains('P_')) {
+                    tituloGrafico = "Línea de Corte (Percentil)";
+                    subtituloGrafico = "La línea roja separa a la población según el porcentaje buscado.";
+                    etiquetaGrafico = "Corte";
+                  }
+
                   return ListView(
                     padding: const EdgeInsets.all(24.0),
                     children:[
@@ -771,28 +1030,15 @@ class _MainScreenState extends State<MainScreen> {
                                   const SizedBox(height: 15),
                                   Text(paso['explicacion'] ?? "", style: const TextStyle(fontSize: 16, color: Colors.black87)),
                                   const SizedBox(height: 20),
-                                  // CONTENEDOR DE LA FÓRMULA LATEX
                                   Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      color: Colors.teal.withOpacity(0.05), 
-                                      borderRadius: BorderRadius.circular(8), 
-                                      border: Border.all(color: Colors.teal.withOpacity(0.3))
-                                    ),
-                                    // LA SOLUCIÓN: Scroll horizontal exclusivamente para la fórmula
+                                    width: double.infinity, padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(color: Colors.teal.withOpacity(0.05), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.teal.withOpacity(0.3))),
                                     child: SingleChildScrollView(
                                       scrollDirection: Axis.horizontal,
-                                      // Usamos un Center condicional para que se vea alineado si es corto
                                       child: Container(
-                                        constraints: BoxConstraints(
-                                          minWidth: MediaQuery.of(context).size.width * 0.4, // Aproximadamente el ancho del panel derecho
-                                        ),
+                                        constraints: BoxConstraints(minWidth: MediaQuery.of(context).size.width * 0.4),
                                         alignment: Alignment.center,
-                                        child: Math.tex(
-                                          paso['formula_latex'] ?? "", 
-                                          textStyle: const TextStyle(fontSize: 24, color: Colors.black)
-                                        ),
+                                        child: Math.tex(paso['formula_latex'] ?? "", textStyle: const TextStyle(fontSize: 24, color: Colors.black)),
                                       ),
                                     ),
                                   )
@@ -806,16 +1052,27 @@ class _MainScreenState extends State<MainScreen> {
                         child: Text("💡 Conclusión: ${result['interpretacion']}", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                       ),
                       const SizedBox(height: 30),
-                      if (result['datos_originales'] != null)
+                      
+                      // -----------------------------------------------------------------
+                      // RENDERIZADO DEL GRÁFICO DE PUNTOS (Depende 100% de la respuesta)
+                      // -----------------------------------------------------------------
+                      if (result['datos_originales'] != null && 
+                          result['resultado_final'] is num && 
+                          mostrarGraficoPuntos) 
+                        
                         GraficoMediaAritmetica(
                           datos: List<double>.from(result['datos_originales'].map((e) => (e as num).toDouble())),
                           media: (result['resultado_final'] as num).toDouble(),
                           contexto: result['contexto'] ?? "Valores",
+                          titulo: tituloGrafico,
+                          subtitulo: subtituloGrafico,
+                          etiquetaLinea: etiquetaGrafico,
                         ),
+
                       if (result['datos_histograma'] != null)
                         GraficoHistograma(datosHistograma: result['datos_histograma'], contexto: result['contexto'] ?? "Valores",),
                       const SizedBox(height: 40),
-                      // 3. Si es Curva Normal (Puntaje Z)
+                      // 3. Si es Curva Normal O Intervalo de Confianza
                       if (result['datos_curva'] != null)
                         GraficoCurvaNormal(
                           datosCurva: result['datos_curva'],
@@ -823,12 +1080,24 @@ class _MainScreenState extends State<MainScreen> {
                           sombreado2: result['sombreado_2'] ?? List.empty(),
                           pacienteX: (result['paciente_x'] as num).toDouble(),
                           pacienteZ: (result['paciente_z'] as num).toDouble(),
-                          
-                          // LA MAGIA DEFENSIVA: Si Python olvida el percentil, ponemos 0.0
                           percentil: result['percentil'] != null ? (result['percentil'] as num).toDouble() : 0.0, 
-                          
                           pacienteX2: result['paciente_x2'] != null ? (result['paciente_x2'] as num).toDouble() : null,
                           tipoArea: result['tipo_area'] ?? 'menor',
+                          
+                          // MAGIA UX: Textos dinámicos si la respuesta es de Intervalo de Confianza (IC)
+                          titulo: simboloRespuesta.contains('IC') ? "Distribución Muestral (${result['percentil']}%)" : "La Campana de Gauss",
+                          subtitulo: simboloRespuesta.contains('IC') ? "La zona dorada marca dónde podría estar la Media Poblacional (μ)." : "El paciente (línea dorada) obtuvo un Z =",
+                          etiquetaX1: simboloRespuesta.contains('IC') ? "L. Inf" : "X1",
+                          etiquetaX2: simboloRespuesta.contains('IC') ? "L. Sup" : "X2",
+                        ),
+                        // 4. Si es Correlación (Bivariada)
+                      if (result['datos_x'] != null && result['datos_y'] != null && ['r', '\\rho', '\\phi'].any((s) => simboloRespuesta.contains(s)))
+                        GraficoDispersion(
+                          datosX: List<double>.from(result['datos_x'].map((e) => (e as num).toDouble())),
+                          datosY: List<double>.from(result['datos_y'].map((e) => (e as num).toDouble())),
+                          titulo: "Gráfico de Dispersión",
+                          labelX: result['contexto']?.split(' vs ')[0] ?? "X",
+                          labelY: result['contexto']?.split(' vs ')[1] ?? "Y",
                         ),
                     ],
                   );

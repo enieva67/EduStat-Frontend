@@ -8,8 +8,14 @@ class GraficoCurvaNormal extends StatelessWidget {
   final double pacienteX;
   final double pacienteZ;
   final double percentil;
-  final double? pacienteX2; // <--- NUEVO (Es opcional)
-  final String tipoArea;    // <--- NUEVO
+  final double? pacienteX2;
+  final String tipoArea;
+  
+  // NUEVAS VARIABLES DINÁMICAS
+  final String titulo;
+  final String subtitulo;
+  final String etiquetaX1;
+  final String etiquetaX2;
 
   const GraficoCurvaNormal({
     super.key,
@@ -18,7 +24,13 @@ class GraficoCurvaNormal extends StatelessWidget {
     required this.sombreado2,
     required this.pacienteX,
     required this.pacienteZ,
-    required this.percentil, this.pacienteX2, required this.tipoArea,
+    required this.percentil,
+    this.pacienteX2,
+    required this.tipoArea,
+    this.titulo = "La Campana de Gauss",
+    this.subtitulo = "El paciente (línea dorada) obtuvo un Z =",
+    this.etiquetaX1 = "X1",
+    this.etiquetaX2 = "X2",
   });
 
   // Función auxiliar para mapear JSON a FlSpots
@@ -46,7 +58,9 @@ class GraficoCurvaNormal extends StatelessWidget {
     final double minX = spotsPrincipal.first.x;
     final double maxX = spotsPrincipal.last.x;
 
-    // Estilo del Sombreado de Lujo
+    double intervaloIdeal = (maxX - minX) / 6;
+    if (intervaloIdeal <= 0) intervaloIdeal = 1.0; // Seguro por si acaso
+
     final Gradient gradienteSombreado = LinearGradient(
       colors:[Colors.amber.withOpacity(0.7), Colors.amber.withOpacity(0.1)],
       begin: Alignment.topCenter, end: Alignment.bottomCenter,
@@ -65,13 +79,21 @@ class GraficoCurvaNormal extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children:[
-              const Icon(Icons.area_chart, color: Colors.amber, size: 28),
+              const Icon(Icons.analytics, color: Colors.amber, size: 28),
               const SizedBox(width: 10),
-              const Text("Probabilidad y Área", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.deepPurple)),
+              // MAGIA UX: Usamos el título dinámico
+              Text(
+                titulo == "La Campana de Gauss" ? "$titulo (Percentil $percentil)" : titulo,
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.deepPurple),
+              ),
             ],
           ),
           const SizedBox(height: 5),
-          Text("Z = $pacienteZ  |  Área pintada: $percentil%", style: const TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.bold)),
+          // MAGIA UX: Usamos el subtítulo dinámico
+          Text(
+            subtitulo == "El paciente (línea dorada) obtuvo un Z =" ? "$subtitulo $pacienteZ" : subtitulo, 
+            style: const TextStyle(fontSize: 14, color: Colors.grey, fontWeight: FontWeight.bold)
+          ),
           const SizedBox(height: 30),
           
           Expanded(
@@ -79,33 +101,30 @@ class GraficoCurvaNormal extends StatelessWidget {
               LineChartData(
                 minX: minX, maxX: maxX, minY: 0, maxY: maxY + 0.05,
                 
-                // LA MAGIA VISUAL: Las líneas de los pacientes
                 extraLinesData: ExtraLinesData(
                   verticalLines:[
-                    // Línea del Paciente 1 (Oculta en 'dos_colas' para no confundir)
                     if (tipoArea != 'dos_colas')
                       VerticalLine(
                         x: pacienteX, color: Colors.amber, strokeWidth: 4, dashArray: [5, 5],
                         label: VerticalLineLabel(
-                          show: true, alignment: Alignment.topRight, padding: const EdgeInsets.only(left: 8, bottom: 15),
+                          show: true, alignment: Alignment.topRight, padding: const EdgeInsets.only(left: 12, bottom: 15),
                           style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 14),
-                          labelResolver: (line) => tipoArea == 'entre_dos_valores' ? "X1=$pacienteX" : "X=$pacienteX",
+                          // MAGIA UX: Etiqueta dinámica
+                          labelResolver: (line) => tipoArea == 'entre_dos_valores' ? "$etiquetaX1=$pacienteX" : "X=$pacienteX",
                         ),
                       ),
-                    
-                    // Línea del Paciente 2 (Si existe)
                     if (pacienteX2 != null && tipoArea == 'entre_dos_valores')
                       VerticalLine(
                         x: pacienteX2!, color: Colors.amber, strokeWidth: 4, dashArray: [5, 5],
                         label: VerticalLineLabel(
-                          show: true, alignment: Alignment.topRight, padding: const EdgeInsets.only(left: 8, bottom: 35), // Lo subimos más para que no choquen si están cerca
+                          show: true, alignment: Alignment.topRight, padding: const EdgeInsets.only(left: 12, bottom: 35),
                           style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 14),
-                          labelResolver: (line) => "X2=$pacienteX2",
+                          // MAGIA UX: Etiqueta dinámica
+                          labelResolver: (line) => "$etiquetaX2=$pacienteX2",
                         ),
                       )
                   ]
                 ),
-                
                 lineBarsData:[
                   // 1. El contorno de la Campana (Púrpura, sin relleno)
                   LineChartBarData(
@@ -136,10 +155,31 @@ class GraficoCurvaNormal extends StatelessWidget {
                   leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                   bottomTitles: AxisTitles(
                     axisNameSize: 30,
-                    axisNameWidget: const Padding(padding: EdgeInsets.only(top: 8.0), child: Text("Puntaje Crudo (X)", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple))),
+                    axisNameWidget: const Padding(
+                      padding: EdgeInsets.only(top: 8.0), 
+                      child: Text("Puntaje Crudo (X)", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepPurple))
+                    ),
                     sideTitles: SideTitles(
-                      showTitles: true, reservedSize: 30,
-                      getTitlesWidget: (value, meta) => Text(value.toInt().toString(), style: const TextStyle(fontSize: 10, color: Colors.black54)),
+                      showTitles: true, 
+                      reservedSize: 30,
+                      interval: intervaloIdeal, // <--- Aplicamos el espaciado perfecto
+                      getTitlesWidget: (value, meta) {
+                        // MAGIA UX 2: SMART FORMATTER
+                        // Formateamos a 2 decimales, pero quitamos los ceros inútiles
+                        String texto = value.toStringAsFixed(2);
+                        
+                        if (texto.endsWith('0')) {
+                          texto = texto.substring(0, texto.length - 1); // Quita el último cero (Ej: 10.50 -> 10.5)
+                        }
+                        if (texto.endsWith('.0')) {
+                          texto = texto.substring(0, texto.length - 2); // Quita el entero (Ej: 10.0 -> 10)
+                        }
+
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 8.0),
+                          child: Text(texto, style: const TextStyle(fontSize: 10, color: Colors.black54)),
+                        );
+                      },
                     ),
                   ),
                 ),

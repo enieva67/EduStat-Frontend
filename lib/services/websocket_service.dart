@@ -7,7 +7,7 @@ class WebSocketService {
   WebSocketChannel? _channel;
   Timer? _reconnectTimer;
   final String _wsUrl = 'ws://127.0.0.1:8000/ws';
-
+  final ValueNotifier<String?> serverError = ValueNotifier(null);
   // ValueNotifiers para actualizar la UI sin usar pesados setState()
   final ValueNotifier<bool> isConnected = ValueNotifier(false);
   final ValueNotifier<String> serverStatus = ValueNotifier("Esperando conexión...");
@@ -112,7 +112,23 @@ class WebSocketService {
         fileData.value = decoded['datos'];
       }
       // Aquí en el futuro agregaremos la redirección a los módulos de IA o Estadística
+      if (decoded['id'] == 'calculo_01') {
+        if (decoded['estado'] == 'exito') {
+          mathResult.value = decoded['datos']; 
+        } else if (decoded['estado'] == 'error') {
+          // Si Python se queja, guardamos el insulto en el buzón
+          serverError.value = decoded['datos']['mensaje'] ?? "Error desconocido en el servidor";
+        }
+      }
       
+      // Hagamos lo mismo para el procesador de archivos por si suben un Excel roto
+      if (decoded['id'] == 'upload_01') {
+        if (decoded['estado'] == 'exito') {
+          fileData.value = decoded['datos'];
+        } else if (decoded['estado'] == 'error') {
+          serverError.value = decoded['datos']['mensaje'];
+        }
+      }
     } catch (e) {
       debugPrint("Error al decodificar JSON del servidor: $e");
     }
