@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 
 class GraficoCurvaNormal extends StatelessWidget {
+  final List<dynamic> sombreado3;
   final List<dynamic> datosCurva;
   final List<dynamic> sombreado1;
   final List<dynamic> sombreado2;
@@ -16,12 +17,15 @@ class GraficoCurvaNormal extends StatelessWidget {
   final String subtitulo;
   final String etiquetaX1;
   final String etiquetaX2;
+  final bool esPruebaHipotesis; // <--- NUEVA VARIABLE MÁGICA
+  
 
   const GraficoCurvaNormal({
     super.key,
     required this.datosCurva,
     required this.sombreado1,
     required this.sombreado2,
+    this.sombreado3 = const[], // <--- NUEVO (Lo ponemos opcional y vacío por defecto)
     required this.pacienteX,
     required this.pacienteZ,
     required this.percentil,
@@ -31,6 +35,7 @@ class GraficoCurvaNormal extends StatelessWidget {
     this.subtitulo = "El paciente (línea dorada) obtuvo un Z =",
     this.etiquetaX1 = "X1",
     this.etiquetaX2 = "X2",
+    this.esPruebaHipotesis = false, // <--- Por defecto es falso (Mantiene el dorado de Dubái)
   });
 
   // Función auxiliar para mapear JSON a FlSpots
@@ -45,6 +50,7 @@ class GraficoCurvaNormal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (datosCurva.isEmpty) return const SizedBox.shrink();
+    final spotsSombreado3 = _mapearPuntos(sombreado3);
 
     final spotsPrincipal = _mapearPuntos(datosCurva);
     final spotsSombreado1 = _mapearPuntos(sombreado1);
@@ -60,11 +66,14 @@ class GraficoCurvaNormal extends StatelessWidget {
 
     double intervaloIdeal = (maxX - minX) / 6;
     if (intervaloIdeal <= 0) intervaloIdeal = 1.0; // Seguro por si acaso
+// MAGIA UX: Colores Dinámicos según el tema
+    final Gradient gradienteSombreado1 = esPruebaHipotesis
+        ? LinearGradient(colors:[Colors.teal.withOpacity(0.3), Colors.teal.withOpacity(0.0)], begin: Alignment.topCenter, end: Alignment.bottomCenter)
+        : LinearGradient(colors: [Colors.amber.withOpacity(0.7), Colors.amber.withOpacity(0.1)], begin: Alignment.topCenter, end: Alignment.bottomCenter);
 
-    final Gradient gradienteSombreado = LinearGradient(
-      colors:[Colors.amber.withOpacity(0.7), Colors.amber.withOpacity(0.1)],
-      begin: Alignment.topCenter, end: Alignment.bottomCenter,
-    );
+    final Gradient gradienteSombreado2 = esPruebaHipotesis
+        ? LinearGradient(colors:[Colors.redAccent.withOpacity(0.7), Colors.redAccent.withOpacity(0.2)], begin: Alignment.topCenter, end: Alignment.bottomCenter)
+        : LinearGradient(colors:[Colors.amber.withOpacity(0.7), Colors.amber.withOpacity(0.1)], begin: Alignment.topCenter, end: Alignment.bottomCenter);
 
     return Container(
       height: 380,
@@ -100,26 +109,39 @@ class GraficoCurvaNormal extends StatelessWidget {
             child: LineChart(
               LineChartData(
                 minX: minX, maxX: maxX, minY: 0, maxY: maxY + 0.05,
-                
+              // LA MAGIA VISUAL: Las líneas de los pacientes / Muestras
                 extraLinesData: ExtraLinesData(
                   verticalLines:[
-                    if (tipoArea != 'dos_colas')
+                    // CORRECCIÓN: Si es Prueba de Hipótesis, SIEMPRE dibujamos la línea de la muestra.
+                    // Si no lo es, mantenemos la regla de ocultarla en 'dos_colas' para Puntaje Z.
+                    if (esPruebaHipotesis || tipoArea != 'dos_colas')
                       VerticalLine(
-                        x: pacienteX, color: Colors.amber, strokeWidth: 4, dashArray: [5, 5],
+                        x: pacienteX, 
+                        color: Colors.amber, 
+                        strokeWidth: 4, 
+                        dashArray: [5, 5],
                         label: VerticalLineLabel(
-                          show: true, alignment: Alignment.topRight, padding: const EdgeInsets.only(left: 12, bottom: 15),
+                          show: true, 
+                          alignment: Alignment.topRight, 
+                          padding: const EdgeInsets.only(left: 12, bottom: 15),
                           style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 14),
-                          // MAGIA UX: Etiqueta dinámica
-                          labelResolver: (line) => tipoArea == 'entre_dos_valores' ? "$etiquetaX1=$pacienteX" : "X=$pacienteX",
+                          // Usamos la etiqueta dinámica (Dirá "Muestra=" o "X1=")
+                          labelResolver: (line) => "$etiquetaX1=$pacienteX",
                         ),
                       ),
-                    if (pacienteX2 != null && tipoArea == 'entre_dos_valores')
+                      
+                    // La segunda línea (Solo se usa en Intervalos o Z entre dos valores)
+                    if (pacienteX2 != null && (tipoArea == 'entre_dos_valores' || etiquetaX2 == 'L. Sup'))
                       VerticalLine(
-                        x: pacienteX2!, color: Colors.amber, strokeWidth: 4, dashArray: [5, 5],
+                        x: pacienteX2!, 
+                        color: Colors.amber, 
+                        strokeWidth: 4, 
+                        dashArray: [5, 5],
                         label: VerticalLineLabel(
-                          show: true, alignment: Alignment.topRight, padding: const EdgeInsets.only(left: 12, bottom: 35),
+                          show: true, 
+                          alignment: Alignment.topRight, 
+                          padding: const EdgeInsets.only(left: 12, bottom: 35),
                           style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 14),
-                          // MAGIA UX: Etiqueta dinámica
                           labelResolver: (line) => "$etiquetaX2=$pacienteX2",
                         ),
                       )
@@ -131,21 +153,26 @@ class GraficoCurvaNormal extends StatelessWidget {
                     spots: spotsPrincipal, isCurved: true, color: Colors.deepPurple, barWidth: 3,
                     isStrokeCapRound: true, dotData: const FlDotData(show: false),
                   ),
-                  
-                  // 2. La capa del Sombreado 1 (Transparente con relleno dorado)
+                  // 2. La capa del Sombreado 1 (Centro / Zona Segura)
                   if (spotsSombreado1.isNotEmpty)
                     LineChartBarData(
                       spots: spotsSombreado1, isCurved: true, color: Colors.transparent, barWidth: 0,
                       dotData: const FlDotData(show: false),
-                      belowBarData: BarAreaData(show: true, gradient: gradienteSombreado),
+                      belowBarData: BarAreaData(show: true, gradient: gradienteSombreado1), // <--- USA EL 1
                     ),
                     
-                  // 3. La capa del Sombreado 2 (Para las dos colas)
+                  // 3. La capa del Sombreado 2 (Colas / Zona de Rechazo)
                   if (spotsSombreado2.isNotEmpty)
                     LineChartBarData(
                       spots: spotsSombreado2, isCurved: true, color: Colors.transparent, barWidth: 0,
                       dotData: const FlDotData(show: false),
-                      belowBarData: BarAreaData(show: true, gradient: gradienteSombreado),
+                      belowBarData: BarAreaData(show: true, gradient: gradienteSombreado2), // <--- USA EL 2
+                    ),
+                    if (spotsSombreado3.isNotEmpty)
+                    LineChartBarData(
+                      spots: spotsSombreado3, isCurved: true, color: Colors.transparent, barWidth: 0,
+                      dotData: const FlDotData(show: false),
+                      belowBarData: BarAreaData(show: true, gradient: gradienteSombreado2), // Usa el MISMO gradiente rojo
                     ),
                 ],
                 titlesData: FlTitlesData(

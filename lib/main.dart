@@ -50,7 +50,10 @@ class _MainScreenState extends State<MainScreen> {
     'pearson': 'r de Pearson',
     'spearman': 'Rho de Spearman',
     'phi': 'Coeficiente Phi',
-    'intervalo_confianza': 'Intervalos de Confianza (Media)', // <--- NUEVA
+     'intervalo_confianza': 'Intervalos de Confianza (Media)',
+    'prueba_hipotesis': 'Prueba de Hipótesis (Media)', // <--- NUEVA
+    'chi2_bondad': 'Ji-Cuadrado (Bondad de Ajuste)',
+    'chi2_independencia': 'Ji-Cuadrado (Independencia)',
   };
 
   // NUEVO: Controladores para el formulario de Puntaje Z
@@ -75,7 +78,26 @@ class _MainScreenState extends State<MainScreen> {
   final TextEditingController _icNCtrl = TextEditingController(text: "25");
   String _icConfianza = '95.0'; // Selector de Confianza
   // NUEVO: Variable para guardar qué percentil quiere el usuario (P1 a P99)
-  double _kPercentil = 50; 
+  double _kPercentil = 50;
+  // CONTROLADORES PARA PRUEBAS DE HIPÓTESIS
+  final TextEditingController _phMuCtrl = TextEditingController(text: "100");
+  final TextEditingController _phXBarraCtrl = TextEditingController(text: "108");
+  final TextEditingController _phDesvCtrl = TextEditingController(text: "15");
+  final TextEditingController _phNCtrl = TextEditingController(text: "30");
+  final TextEditingController _phAlfaCtrl = TextEditingController(text: "0.05");
+  String _phTipoPrueba = 'dos_colas';
+// CONTROLADORES PARA JI-CUADRADO
+  final TextEditingController _chi2BondadObsCtrl = TextEditingController(text: "30; 10; 20");
+  final TextEditingController _chi2BondadEspCtrl = TextEditingController(); // Vacío = Equiprobabilidad
+  
+  // EL MOTOR DE LA MATRIZ DINÁMICA (Ji-Cuadrado)
+  bool _tengoTablaChi2 = true;
+  List<List<TextEditingController>> _matrizChi2 = [[TextEditingController(text: "15"), TextEditingController(text: "25")],[TextEditingController(text: "10"), TextEditingController(text: "30")],
+  ];
+  final TextEditingController _chi2IndepRawXCtrl = TextEditingController();
+  final TextEditingController _chi2IndepRawYCtrl = TextEditingController();
+  
+  final TextEditingController _chi2AlfaCtrl = TextEditingController(text: "0.05");
   final List<Map<String, TextEditingController>> _filasAgrupadas =[
     {'inf': TextEditingController(text: '70'), 'sup': TextEditingController(text: '84'), 'f': TextEditingController(text: '4')},
     {'inf': TextEditingController(text: '85'), 'sup': TextEditingController(text: '99'), 'f': TextEditingController(text: '14')},
@@ -102,13 +124,55 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   void dispose() {
+    // 1. Apagamos el puente de conexión del WebSocket
     wsService.dispose();
-    _datosSinAgruparController.dispose(); // <--- AÑADE ESTO
+    
+    // 2. Limpiamos los Controladores de Estadística Descriptiva (Nivel 1 y 2)
+    _datosSinAgruparController.dispose();
     for (var fila in _filasAgrupadas) {
       fila['inf']?.dispose();
       fila['sup']?.dispose();
       fila['f']?.dispose();
+      
     }
+
+    // 3. Limpiamos los Controladores de la Curva Normal (Puntaje Z)
+    _zMediaCtrl.dispose();
+    _zDesviacionCtrl.dispose();
+    _zPacienteCtrl.dispose();
+    _zPaciente2Ctrl.dispose();
+    _zArea1Ctrl.dispose();
+    _zArea2Ctrl.dispose();
+
+    // 4. Limpiamos los Controladores de Correlación Bivariada
+    _bivNombreXCtrl.dispose();
+    _bivNombreYCtrl.dispose();
+    _bivDatosXCtrl.dispose();
+    _bivDatosYCtrl.dispose();
+
+    // 5. Limpiamos los Controladores de Intervalos de Confianza
+    _icMediaCtrl.dispose();
+    _icDesvCtrl.dispose();
+    _icNCtrl.dispose();
+
+    // 6. Limpiamos los Controladores de Pruebas de Hipótesis
+    _phMuCtrl.dispose();
+    _phXBarraCtrl.dispose();
+    _phDesvCtrl.dispose();
+    _phNCtrl.dispose();
+    _phAlfaCtrl.dispose();
+
+_chi2BondadObsCtrl.dispose();
+  _chi2BondadEspCtrl.dispose();
+  for (var fila in _matrizChi2) {
+      for (var ctrl in fila) {
+        ctrl.dispose();
+      }
+    }
+    _chi2IndepRawXCtrl.dispose();
+    _chi2IndepRawYCtrl.dispose();
+    _chi2AlfaCtrl.dispose();
+    // Finalmente, dejamos que Flutter destruya la pantalla
     super.dispose();
   }
 
@@ -275,6 +339,99 @@ Future<void> _pegarDatosBivariados() async {
       }
     }
   }
+  // ---------------------------------------------------------
+  // HERRAMIENTAS DE LA MATRIZ DINÁMICA (HOTEL DUBÁI)
+  // ---------------------------------------------------------
+  void _addFilaChi2() {
+    setState(() {
+      int numColumnas = _matrizChi2[0].length;
+      _matrizChi2.add(List.generate(numColumnas, (index) => TextEditingController(text: "0")));
+    });
+  }
+
+  void _addColumnaChi2() {
+    setState(() {
+      for (var fila in _matrizChi2) {
+        fila.add(TextEditingController(text: "0"));
+      }
+    });
+  }
+
+  void _eliminarFilaChi2(int index) {
+    if (_matrizChi2.length <= 2) {
+      _mostrarMensaje("⚠️ La tabla debe tener al menos 2 filas.");
+      return;
+    }
+    setState(() {
+      for (var ctrl in _matrizChi2[index]) { ctrl.dispose(); }
+      _matrizChi2.removeAt(index);
+    });
+  }
+
+  void _eliminarColumnaChi2(int index) {
+    if (_matrizChi2[0].length <= 2) {
+      _mostrarMensaje("⚠️ La tabla debe tener al menos 2 columnas.");
+      return;
+    }
+    setState(() {
+      for (var fila in _matrizChi2) {
+        fila[index].dispose();
+        fila.removeAt(index);
+      }
+    });
+  }
+
+  void _limpiarMatrizChi2() {
+    setState(() {
+      for (var fila in _matrizChi2) {
+        for (var ctrl in fila) { ctrl.text = ""; }
+      }
+    });
+  }
+
+  Future<void> _pegarMatrizExcelChi2() async {
+    ClipboardData? data = await Clipboard.getData(Clipboard.kTextPlain);
+    if (data == null || data.text == null || data.text!.isEmpty) return;
+
+    List<String> lineas = data.text!.trim().split('\n');
+    List<List<double>> matrizParseada =[];
+
+    for (String linea in lineas) {
+      if (linea.trim().isEmpty) continue;
+      List<String> celdas = linea.split(RegExp(r'[\t;]')); // Excel usa tabulaciones (\t)
+      List<double> filaNumeros =[];
+      
+      for (String celda in celdas) {
+        double? val = double.tryParse(celda.replaceAll(',', '.').trim());
+        if (val != null) filaNumeros.add(val);
+      }
+      if (filaNumeros.isNotEmpty) matrizParseada.add(filaNumeros);
+    }
+
+    // Validamos que sea al menos 2x2 y rectangular
+    if (matrizParseada.length >= 2 && matrizParseada[0].length >= 2) {
+      int cols = matrizParseada[0].length;
+      bool esRectangular = matrizParseada.every((fila) => fila.length == cols);
+      
+      if (!esRectangular) {
+        _mostrarMensaje("❌ Error: La matriz copiada está incompleta (no es rectangular).");
+        return;
+      }
+
+      // Vaciamos la memoria de la matriz vieja
+      for (var fila in _matrizChi2) { for (var ctrl in fila) { ctrl.dispose(); } }
+
+      // Construimos la nueva matriz
+      setState(() {
+        _matrizChi2 = matrizParseada.map((fila) {
+          return fila.map((val) => TextEditingController(text: val.toString().replaceAll('.0', ''))).toList();
+        }).toList();
+      });
+      _mostrarMensaje("✨ ¡Excel Pegado! Matriz ${matrizParseada.length}x$cols redimensionada automáticamente.");
+    } else {
+      _mostrarMensaje("❌ Error: Copia al menos 2 filas y 2 columnas con números puros.");
+    }
+  }
 void _enviarCorrelacion() {
     List<double> xList = _extraerNumeros(_bivDatosXCtrl.text);
     List<double> yList = _extraerNumeros(_bivDatosYCtrl.text);
@@ -298,6 +455,115 @@ void _enviarCorrelacion() {
       }
     };
     wsService.sendJson(payload);
+  }
+  void _enviarPruebaHipotesis() {
+    double? mu = double.tryParse(_phMuCtrl.text.replaceAll(',', '.'));
+    double? xBarra = double.tryParse(_phXBarraCtrl.text.replaceAll(',', '.'));
+    double? desv = double.tryParse(_phDesvCtrl.text.replaceAll(',', '.'));
+    int? n = int.tryParse(_phNCtrl.text);
+    double? alfa = double.tryParse(_phAlfaCtrl.text.replaceAll(',', '.'));
+
+    if (mu == null || xBarra == null || desv == null || n == null || alfa == null) {
+      _mostrarMensaje("❌ Error: Ingresa números válidos en todos los campos.");
+      return;
+    }
+
+    final payload = {
+      "id": "calculo_01",
+      "accion": "calcular_prueba_hipotesis",
+      "parametros": {
+        "mu_pob": mu, "x_barra": xBarra, "desviacion": desv,
+        "n": n, "alfa": alfa, "tipo_prueba": _phTipoPrueba
+      }
+    };
+    wsService.sendJson(payload);
+  }
+  // ENVÍO DE BONDAD DE AJUSTE
+  void _enviarChi2Bondad() {
+    List<double> obs = _extraerNumeros(_chi2BondadObsCtrl.text);
+    if (obs.length < 2) {
+      _mostrarMensaje("❌ Error: Ingresa al menos 2 frecuencias observadas.");
+      return;
+    }
+    
+    List<double> esp = _extraerNumeros(_chi2BondadEspCtrl.text);
+    double? alfa = double.tryParse(_chi2AlfaCtrl.text.replaceAll(',', '.'));
+    
+    wsService.sendJson({
+      "id": "calculo_01", "accion": "calcular_chi2_bondad",
+      "parametros": {
+        "datos": obs, 
+        "esperadas": esp.isNotEmpty ? esp : null, // Si está vacío, enviamos null
+        "tipo_ingreso": "frecuencias",
+        "alfa": alfa ?? 0.05
+      }
+    });
+  }
+
+  // ENVÍO DE INDEPENDENCIA (CON PARSER DE MATRIZ NINJA MEJORADO)
+  
+     // ENVÍO DE INDEPENDENCIA (CON MATRIZ DINÁMICA HOTEL DUBÁI)
+  void _enviarChi2Independencia() {
+    double? alfa = double.tryParse(_chi2AlfaCtrl.text.replaceAll(',', '.'));
+
+    if (_tengoTablaChi2) {
+      // 1. Ya no usamos expresiones regulares. Leemos directamente nuestra cuadrícula de controladores.
+      final List<List<double>> matrizFinal = List.empty(growable: true);
+
+      for (int i = 0; i < _matrizChi2.length; i++) {
+        final List<double> filaNumeros = List.empty(growable: true);
+
+        for (int j = 0; j < _matrizChi2[i].length; j++) {
+          String textoCelda = _matrizChi2[i][j].text.trim();
+
+          // VALIDACIÓN PREMIUM 1: ¿Dejó la celda vacía?
+          if (textoCelda.isEmpty) {
+            _mostrarMensaje("❌ Error: La celda de la Fila ${i + 1}, Columna ${j + 1} está vacía.");
+            return; // Detenemos el envío
+          }
+
+          // Convertimos a número (soportando la coma argentina)
+          double? val = double.tryParse(textoCelda.replaceAll(',', '.'));
+          
+          // VALIDACIÓN PREMIUM 2: ¿Escribió letras en vez de números?
+          if (val == null) {
+            _mostrarMensaje("❌ Error: '$textoCelda' no es un número válido (Fila ${i + 1}, Columna ${j + 1}).");
+            return; // Detenemos el envío
+          }
+          
+          filaNumeros.add(val);
+        }
+        matrizFinal.add(filaNumeros);
+      }
+
+      // VALIDACIÓN DE TAMAÑO (Por seguridad, aunque la UI no deja borrar menos de 2x2)
+      if (matrizFinal.length < 2 || matrizFinal[0].length < 2) {
+        _mostrarMensaje("❌ Error: La tabla debe tener al menos 2 filas y 2 columnas.");
+        return;
+      }
+
+      // ¡Todo perfecto! Enviamos la matriz al backend
+      wsService.sendJson({
+        "id": "calculo_01", 
+        "accion": "calcular_chi2_independencia",
+        "parametros": { "matriz": matrizFinal, "tipo_ingreso": "tabla", "alfa": alfa ?? 0.05 }
+      });
+
+        } else {
+      // Datos Sueltos (Textos como "Masculino; Femenino")
+      List<String> rawX = _chi2IndepRawXCtrl.text.split(RegExp(r'[\n;]')).map((e)=>e.trim()).where((e)=>e.isNotEmpty).toList();
+      List<String> rawY = _chi2IndepRawYCtrl.text.split(RegExp(r'[\n;]')).map((e)=>e.trim()).where((e)=>e.isNotEmpty).toList();
+
+      if (rawX.length != rawY.length || rawX.isEmpty) {
+        _mostrarMensaje("❌ Error: Ambas variables deben tener la misma cantidad de datos sueltos.");
+        return;
+      }
+
+      wsService.sendJson({
+        "id": "calculo_01", "accion": "calcular_chi2_independencia",
+        "parametros": { "raw_x": rawX, "raw_y": rawY, "tipo_ingreso": "datos_sueltos", "alfa": alfa ?? 0.05 }
+      });
+    }
   }
   // 3. ENVÍO AL BACKEND: Formatea la caja antes de enviar por si el usuario tipeó
   void _enviarDatosSinAgrupar() {
@@ -449,7 +715,8 @@ void _enviarCorrelacion() {
                 leading: const Icon(Icons.psychology),
                 title: const Text('3. Estadística Inferencial', style: TextStyle(fontWeight: FontWeight.bold)),
                 children:[
-                  ListTile(title: const Text("Intervalos de Confianza (Media)"), onTap: () { setState(() => _medidaSeleccionada = 'intervalo_confianza'); Navigator.pop(context); }),
+                  ListTile(title: const Text("Intervalos de Confianza"), onTap: () { setState(() => _medidaSeleccionada = 'intervalo_confianza'); Navigator.pop(context); }),
+                  ListTile(title: const Text("Pruebas de Hipótesis"), onTap: () { setState(() => _medidaSeleccionada = 'prueba_hipotesis'); Navigator.pop(context); }), // <--- NUEVO
                 ],
               ),
               ExpansionTile(
@@ -459,6 +726,14 @@ void _enviarCorrelacion() {
                   ListTile(title: const Text("r de Pearson (Paramétrica)"), onTap: () { setState(() => _medidaSeleccionada = 'pearson'); Navigator.pop(context); }),
                   ListTile(title: const Text("Rho de Spearman (No Paramétrica)"), onTap: () { setState(() => _medidaSeleccionada = 'spearman'); Navigator.pop(context); }),
                   ListTile(title: const Text("Coeficiente Phi (Dicotómicas)"), onTap: () { setState(() => _medidaSeleccionada = 'phi'); Navigator.pop(context); }),
+                ],
+              ),
+              ExpansionTile(
+                leading: const Icon(Icons.category),
+                title: const Text('5. Estadística Categórica', style: TextStyle(fontWeight: FontWeight.bold)),
+                children:[
+                  ListTile(title: const Text("Ji-Cuadrado (Bondad de Ajuste)"), onTap: () { setState(() => _medidaSeleccionada = 'chi2_bondad'); Navigator.pop(context); }),
+                  ListTile(title: const Text("Ji-Cuadrado (Independencia)"), onTap: () { setState(() => _medidaSeleccionada = 'chi2_independencia'); Navigator.pop(context); }),
                 ],
               ),
             ],
@@ -715,6 +990,58 @@ void _enviarCorrelacion() {
                                     )
                                   ],
                                 )
+                                // 9. MÓDULO PRUEBA DE HIPÓTESIS
+                              : _medidaSeleccionada == 'prueba_hipotesis'
+                              ? Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children:[
+                                    const Text("Prueba de Hipótesis (Z o T)", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                                    const SizedBox(height: 15),
+                                    
+                                    TextField(controller: _phMuCtrl, decoration: const InputDecoration(labelText: "Hipótesis Nula (μ esperado)", prefixIcon: Icon(Icons.balance), border: OutlineInputBorder(), isDense: true)),
+                                    const SizedBox(height: 10),
+                                    TextField(controller: _phXBarraCtrl, decoration: const InputDecoration(labelText: "Media de la Muestra (x̄)", prefixIcon: Icon(Icons.person), border: OutlineInputBorder(), isDense: true, filled: true, fillColor: Colors.tealAccent)),
+                                    const SizedBox(height: 10),
+                                    TextField(controller: _phDesvCtrl, decoration: const InputDecoration(labelText: "Desviación Estándar (s o σ)", prefixIcon: Icon(Icons.compare_arrows), border: OutlineInputBorder(), isDense: true)),
+                                    const SizedBox(height: 10),
+                                    Row(
+                                      children:[
+                                        Expanded(child: TextField(controller: _phNCtrl, decoration: const InputDecoration(labelText: "Muestra (n)", prefixIcon: Icon(Icons.group), border: OutlineInputBorder(), isDense: true))),
+                                        const SizedBox(width: 10),
+                                        Expanded(child: TextField(controller: _phAlfaCtrl, decoration: const InputDecoration(labelText: "Alfa (α)", prefixIcon: Icon(Icons.warning), border: OutlineInputBorder(), isDense: true))),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 15),
+                                    
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                                      decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.redAccent.shade100), borderRadius: BorderRadius.circular(4)),
+                                      child: DropdownButtonHideUnderline(
+                                        child: DropdownButton<String>(
+                                          isExpanded: true, value: _phTipoPrueba,
+                                          icon: const Icon(Icons.alt_route, color: Colors.redAccent),
+                                          items: const[
+                                            DropdownMenuItem(value: 'dos_colas', child: Text("Test a Dos Colas (Diferente: ≠)")),
+                                            DropdownMenuItem(value: 'cola_der', child: Text("Test Cola Derecha (Mayor: >)")),
+                                            DropdownMenuItem(value: 'cola_izq', child: Text("Test Cola Izquierda (Menor: <)")),
+                                          ],
+                                          onChanged: (val) { if (val != null) setState(() => _phTipoPrueba = val); },
+                                        ),
+                                      ),
+                                    ),
+                                    
+                                    const SizedBox(height: 20),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: ElevatedButton.icon(
+                                        icon: const Icon(Icons.gavel),
+                                        label: const Padding(padding: EdgeInsets.all(12.0), child: Text("Evaluar Hipótesis", style: TextStyle(fontSize: 16))),
+                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent.shade700, foregroundColor: Colors.white, elevation: 3),
+                                        onPressed: _enviarPruebaHipotesis,
+                                      ),
+                                    )
+                                  ],
+                                )
                                 // 3. MÓDULO INFERENCIAL (¡NUEVO!)
                               : _medidaSeleccionada == 'intervalo_confianza'
                               ? Column(
@@ -759,7 +1086,158 @@ void _enviarCorrelacion() {
                                     )
                                   ],
                                 )
-                                
+                                // 5A. MÓDULO JI-CUADRADO (BONDAD DE AJUSTE)
+                              : _medidaSeleccionada == 'chi2_bondad'
+                              ? Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children:[
+                                    const Text("Ji-Cuadrado: Bondad de Ajuste (1 Variable)", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.orange)),
+                                    const SizedBox(height: 15),
+                                    TextField(controller: _chi2AlfaCtrl, decoration: const InputDecoration(labelText: "Nivel de Significancia (Alfa)", prefixIcon: Icon(Icons.warning), border: OutlineInputBorder(), isDense: true)),
+                                    const SizedBox(height: 15),
+                                    const Text("Ingresa las frecuencias separadas por punto y coma (;):", style: TextStyle(fontWeight: FontWeight.bold)),
+                                    const SizedBox(height: 5),
+                                    TextField(controller: _chi2BondadObsCtrl, maxLines: 2, decoration: const InputDecoration(labelText: "Frecuencias Observadas (O) - Obligatorio", border: OutlineInputBorder(), filled: true, fillColor: Colors.white)),
+                                    const SizedBox(height: 10),
+                                    TextField(controller: _chi2BondadEspCtrl, maxLines: 2, decoration: const InputDecoration(labelText: "Frecuencias Esperadas (E) - Opcional (Vacío = Equiprobable)", border: OutlineInputBorder(), filled: true, fillColor: Colors.white)),
+                                    const SizedBox(height: 20),
+                                    SizedBox(width: double.infinity, child: ElevatedButton.icon(icon: const Icon(Icons.casino), label: const Padding(padding: EdgeInsets.all(12.0), child: Text("Evaluar Bondad de Ajuste")), style: ElevatedButton.styleFrom(backgroundColor: Colors.orange.shade700, foregroundColor: Colors.white), onPressed: _enviarChi2Bondad))
+                                  ],
+                                )
+
+                              // 5B. MÓDULO JI-CUADRADO (INDEPENDENCIA)
+                              : _medidaSeleccionada == 'chi2_independencia'
+                              ? Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children:[
+                                    const Text("Ji-Cuadrado: Independencia (2 Variables)", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.orange)),
+                                    const SizedBox(height: 15),
+                                    TextField(controller: _chi2AlfaCtrl, decoration: const InputDecoration(labelText: "Nivel de Significancia (Alfa)", prefixIcon: Icon(Icons.warning), border: OutlineInputBorder(), isDense: true)),
+                                    const SizedBox(height: 15),
+                                    Row(
+                                      children:[
+                                        const Text("¿Qué dato tienes?", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.teal)),
+                                        Switch(value: _tengoTablaChi2, activeColor: Colors.teal, onChanged: (val) => setState(() => _tengoTablaChi2 = val)),
+                                        Text(_tengoTablaChi2 ? "Tabla Resumida (Frecuencias)" : "Datos Sueltos", style: TextStyle(color: Colors.teal.shade700, fontWeight: FontWeight.bold)),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 10),
+                                    
+                                    if (_tengoTablaChi2) ...[
+                                      const Text("Tabla de Frecuencias (Observadas):", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.deepPurple)),
+                                      const SizedBox(height: 10),
+                                      
+                                      // LA CUADRÍCULA DINÁMICA (Con Scroll Horizontal por si agregan muchas columnas)
+                                      SingleChildScrollView(
+                                        scrollDirection: Axis.horizontal,
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children:[
+                                           // CABECERAS DE COLUMNAS (Con botón de basurero para columnas)
+                                            Row(
+                                              // LA MAGIA: Metemos todo en una lista de Widgets y usamos "..." para desempaquetar el generador
+                                              children:[
+                                                ...List.generate(_matrizChi2[0].length, (cIndex) {
+                                                  return Container(
+                                                    width: 80,
+                                                    margin: const EdgeInsets.only(right: 8, bottom: 8),
+                                                    child: Row(
+                                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                      children:[
+                                                        Text("Col ${cIndex + 1}", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+                                                        if (_matrizChi2[0].length > 2)
+                                                          InkWell(
+                                                            onTap: () => _eliminarColumnaChi2(cIndex),
+                                                            child: const Icon(Icons.remove_circle, color: Colors.redAccent, size: 16),
+                                                          )
+                                                      ],
+                                                    ),
+                                                  );
+                                                }),
+                                                
+                                                // El espacio final ahora convive en paz en la lista genérica de Widgets
+                                                const SizedBox(width: 40), 
+                                              ],
+                                            ),
+                                            
+                                            // FILAS DE LA MATRIZ
+                                            ...List.generate(_matrizChi2.length, (rIndex) {
+                                              return Padding(
+                                                padding: const EdgeInsets.only(bottom: 8.0),
+                                                child: Row(
+                                                  children:[
+                                                    // LAS CELDAS (TextFields)
+                                                    ...List.generate(_matrizChi2[rIndex].length, (cIndex) {
+                                                      return Container(
+                                                        width: 80,
+                                                        margin: const EdgeInsets.only(right: 8),
+                                                        child: TextField(
+                                                          controller: _matrizChi2[rIndex][cIndex],
+                                                          textAlign: TextAlign.center,
+                                                          decoration: const InputDecoration(
+                                                            border: OutlineInputBorder(),
+                                                            isDense: true,
+                                                            contentPadding: EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                                                            filled: true, fillColor: Colors.white,
+                                                          ),
+                                                        ),
+                                                      );
+                                                    }),
+                                                    // TACHO DE BASURA DE LA FILA
+                                                    if (_matrizChi2.length > 2)
+                                                      IconButton(
+                                                        icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                                                        onPressed: () => _eliminarFilaChi2(rIndex),
+                                                      )
+                                                    else
+                                                      const SizedBox(width: 48),
+                                                  ],
+                                                ),
+                                              );
+                                            }),
+                                          ],
+                                        ),
+                                      ),
+                                      
+                                      const SizedBox(height: 10),
+                                      
+                                      // LA BARRA DE HERRAMIENTAS GRIS (Inspirada en tu captura de pantalla)
+                                      Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(8)),
+                                        child: Wrap(
+                                          spacing: 10, runSpacing: 10,
+                                          alignment: WrapAlignment.spaceBetween,
+                                          children:[
+                                            Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children:[
+                                                TextButton.icon(onPressed: _addFilaChi2, icon: const Icon(Icons.add, color: Colors.teal), label: const Text("Añadir Fila", style: TextStyle(color: Colors.teal))),
+                                                TextButton.icon(onPressed: _addColumnaChi2, icon: const Icon(Icons.add, color: Colors.deepPurple), label: const Text("Añadir Columna", style: TextStyle(color: Colors.deepPurple))),
+                                              ],
+                                            ),
+                                            Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children:[
+                                                Tooltip(message: "Copia una tabla en Excel y pégala aquí", child: TextButton.icon(onPressed: _pegarMatrizExcelChi2, icon: const Icon(Icons.content_paste, color: Colors.blueAccent), label: const Text("Pegar Excel", style: TextStyle(color: Colors.blueAccent)))),
+                                                IconButton(tooltip: "Vaciar Tabla", icon: const Icon(Icons.delete_sweep, color: Colors.redAccent), onPressed: _limpiarMatrizChi2),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ] else ...[
+                                      const Text("Pega las columnas de texto (Ej: 'Hombre; Mujer'):", style: TextStyle(fontSize: 12, color: Colors.grey)),
+                                      const SizedBox(height: 5),
+                                      TextField(controller: _chi2IndepRawXCtrl, maxLines: 2, decoration: const InputDecoration(labelText: "Columna Variable X", border: OutlineInputBorder(), filled: true, fillColor: Colors.white)),
+                                      const SizedBox(height: 10),
+                                      TextField(controller: _chi2IndepRawYCtrl, maxLines: 2, decoration: const InputDecoration(labelText: "Columna Variable Y", border: OutlineInputBorder(), filled: true, fillColor: Colors.white)),
+                                    ],
+
+                                    const SizedBox(height: 20),
+                                    SizedBox(width: double.infinity, child: ElevatedButton.icon(icon: const Icon(Icons.grid_on), label: const Padding(padding: EdgeInsets.all(12.0), child: Text("Analizar Independencia")), style: ElevatedButton.styleFrom(backgroundColor: Colors.orange.shade700, foregroundColor: Colors.white), onPressed: _enviarChi2Independencia))
+                                  ],
+                                )
                             : Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children:[
@@ -1072,9 +1550,10 @@ void _enviarCorrelacion() {
                       if (result['datos_histograma'] != null)
                         GraficoHistograma(datosHistograma: result['datos_histograma'], contexto: result['contexto'] ?? "Valores",),
                       const SizedBox(height: 40),
-                      // 3. Si es Curva Normal O Intervalo de Confianza
+                      // 3. Si es Curva Normal, Intervalo o PRUEBA DE HIPÓTESIS
                       if (result['datos_curva'] != null)
                         GraficoCurvaNormal(
+                          sombreado3: result['sombreado_3'] ?? List.empty(), // <--- NUEVO Y DEFENSIVO
                           datosCurva: result['datos_curva'],
                           sombreado1: result['sombreado_1'] ?? List.empty(),
                           sombreado2: result['sombreado_2'] ?? List.empty(),
@@ -1084,10 +1563,19 @@ void _enviarCorrelacion() {
                           pacienteX2: result['paciente_x2'] != null ? (result['paciente_x2'] as num).toDouble() : null,
                           tipoArea: result['tipo_area'] ?? 'menor',
                           
-                          // MAGIA UX: Textos dinámicos si la respuesta es de Intervalo de Confianza (IC)
-                          titulo: simboloRespuesta.contains('IC') ? "Distribución Muestral (${result['percentil']}%)" : "La Campana de Gauss",
-                          subtitulo: simboloRespuesta.contains('IC') ? "La zona dorada marca dónde podría estar la Media Poblacional (μ)." : "El paciente (línea dorada) obtuvo un Z =",
-                          etiquetaX1: simboloRespuesta.contains('IC') ? "L. Inf" : "X1",
+                          // ACTIVAMOS LA VARIABLE MÁGICA
+                          esPruebaHipotesis: simboloRespuesta.contains('P_val') || simboloRespuesta.contains('\\chi^2'),
+
+                          titulo: simboloRespuesta.contains('IC') ? "Distribución Muestral (${result['percentil']}%)" 
+                              : (simboloRespuesta.contains('\\chi^2') ? "Distribución Ji-Cuadrado (χ²)" // <--- NUEVO
+                              : (simboloRespuesta.contains('P_val') ? "Zonas de Rechazo (Alfa: ${result['percentil'] / 100})" : "La Campana de Gauss")),
+                              
+                          subtitulo: simboloRespuesta.contains('IC') ? "La zona dorada marca dónde podría estar la Media Poblacional (μ)." 
+                              : (simboloRespuesta.contains('\\chi^2') ? "Tu estadístico (línea dorada) cayó en: ${result['interpretacion'].contains('NO RECHAZAMOS') ? 'Zona Segura' : 'ZONA DE PELIGRO (Rechazo)'}" // <--- NUEVO
+                              : (simboloRespuesta.contains('P_val') ? "Tu muestra (línea dorada) cayó en: ${result['interpretacion'].contains('NO RECHAZAMOS') ? 'Zona Segura' : 'ZONA DE PELIGRO'}" : "El paciente (línea dorada) obtuvo un Z =")),
+                              
+                          etiquetaX1: simboloRespuesta.contains('IC') ? "L. Inf" 
+                              : ((simboloRespuesta.contains('P_val') || simboloRespuesta.contains('\\chi^2')) ? "Muestra" : "X1"),
                           etiquetaX2: simboloRespuesta.contains('IC') ? "L. Sup" : "X2",
                         ),
                         // 4. Si es Correlación (Bivariada)
