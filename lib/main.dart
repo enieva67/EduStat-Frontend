@@ -62,6 +62,8 @@ class _MainScreenState extends State<MainScreen> {
   String _tipoAreaZ = 'menor'; // Por defecto pinta a la izquierda
   final TextEditingController _zPacienteCtrl = TextEditingController(text: "118");
   final TextEditingController _zPaciente2Ctrl = TextEditingController(text: "130"); // <--- NUEVO
+  // Controlador para la barra de desplazamiento horizontal de la tabla
+  final ScrollController _scrollHorizontalCtrl = ScrollController();
   bool _tengoPuntajeX = true; // Interruptor: True = Normal, False = Proceso Inverso
   final TextEditingController _zArea1Ctrl = TextEditingController(text: "95");
   final TextEditingController _zArea2Ctrl = TextEditingController(text: "99");
@@ -161,7 +163,7 @@ class _MainScreenState extends State<MainScreen> {
     _phDesvCtrl.dispose();
     _phNCtrl.dispose();
     _phAlfaCtrl.dispose();
-
+_scrollHorizontalCtrl.dispose();
 _chi2BondadObsCtrl.dispose();
   _chi2BondadEspCtrl.dispose();
   for (var fila in _matrizChi2) {
@@ -1128,9 +1130,16 @@ void _enviarCorrelacion() {
                                       const SizedBox(height: 10),
                                       
                                       // LA CUADRÍCULA DINÁMICA (Con Scroll Horizontal por si agregan muchas columnas)
-                                      SingleChildScrollView(
-                                        scrollDirection: Axis.horizontal,
-                                        child: Column(
+                                     Scrollbar(
+                                        controller: _scrollHorizontalCtrl,
+                                        thumbVisibility: true, // Fuerza a que la barra siempre se vea
+                                        trackVisibility: true, // Dibuja un riel sutil
+                                        thickness: 8, // Una barra gordita y cómoda
+                                        radius: const Radius.circular(10),
+                                        child: SingleChildScrollView(
+                                          controller: _scrollHorizontalCtrl, // Conectamos el controlador
+                                          scrollDirection: Axis.horizontal,
+                                          child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children:[
                                            // CABECERAS DE COLUMNAS (Con botón de basurero para columnas)
@@ -1198,7 +1207,7 @@ void _enviarCorrelacion() {
                                           ],
                                         ),
                                       ),
-                                      
+                                     ),
                                       const SizedBox(height: 10),
                                       
                                       // LA BARRA DE HERRAMIENTAS GRIS (Inspirada en tu captura de pantalla)
@@ -1550,13 +1559,13 @@ void _enviarCorrelacion() {
                       if (result['datos_histograma'] != null)
                         GraficoHistograma(datosHistograma: result['datos_histograma'], contexto: result['contexto'] ?? "Valores",),
                       const SizedBox(height: 40),
-                      // 3. Si es Curva Normal, Intervalo o PRUEBA DE HIPÓTESIS
+                      // 3. Si es Curva Normal, Intervalo, PRUEBA DE HIPÓTESIS o JI-CUADRADO
                       if (result['datos_curva'] != null)
                         GraficoCurvaNormal(
-                          sombreado3: result['sombreado_3'] ?? List.empty(), // <--- NUEVO Y DEFENSIVO
                           datosCurva: result['datos_curva'],
                           sombreado1: result['sombreado_1'] ?? List.empty(),
                           sombreado2: result['sombreado_2'] ?? List.empty(),
+                          sombreado3: result['sombreado_3'] ?? List.empty(), 
                           pacienteX: (result['paciente_x'] as num).toDouble(),
                           pacienteZ: (result['paciente_z'] as num).toDouble(),
                           percentil: result['percentil'] != null ? (result['percentil'] as num).toDouble() : 0.0, 
@@ -1567,15 +1576,16 @@ void _enviarCorrelacion() {
                           esPruebaHipotesis: simboloRespuesta.contains('P_val') || simboloRespuesta.contains('\\chi^2'),
 
                           titulo: simboloRespuesta.contains('IC') ? "Distribución Muestral (${result['percentil']}%)" 
-                              : (simboloRespuesta.contains('\\chi^2') ? "Distribución Ji-Cuadrado (χ²)" // <--- NUEVO
+                              : (simboloRespuesta.contains('\\chi^2') ? "Distribución Ji-Cuadrado (χ²)" 
                               : (simboloRespuesta.contains('P_val') ? "Zonas de Rechazo (Alfa: ${result['percentil'] / 100})" : "La Campana de Gauss")),
                               
+                          // MAGIA DEFENSIVA: Usamos (result['interpretacion'] ?? '') para que nunca más crashee si viene nulo
                           subtitulo: simboloRespuesta.contains('IC') ? "La zona dorada marca dónde podría estar la Media Poblacional (μ)." 
-                              : (simboloRespuesta.contains('\\chi^2') ? "Tu estadístico (línea dorada) cayó en: ${result['interpretacion'].contains('NO RECHAZAMOS') ? 'Zona Segura' : 'ZONA DE PELIGRO (Rechazo)'}" // <--- NUEVO
-                              : (simboloRespuesta.contains('P_val') ? "Tu muestra (línea dorada) cayó en: ${result['interpretacion'].contains('NO RECHAZAMOS') ? 'Zona Segura' : 'ZONA DE PELIGRO'}" : "El paciente (línea dorada) obtuvo un Z =")),
+                              : (simboloRespuesta.contains('\\chi^2') ? "Tu estadístico (línea dorada) cayó en: ${(result['interpretacion'] ?? '').contains('NO RECHAZAMOS') ? 'Zona Segura' : 'ZONA DE PELIGRO (Rechazo)'}" 
+                              : (simboloRespuesta.contains('P_val') ? "Tu muestra (línea dorada) cayó en: ${(result['interpretacion'] ?? '').contains('NO RECHAZAMOS') ? 'Zona Segura' : 'ZONA DE PELIGRO'}" : "El paciente (línea dorada) obtuvo un Z =")),
                               
                           etiquetaX1: simboloRespuesta.contains('IC') ? "L. Inf" 
-                              : ((simboloRespuesta.contains('P_val') || simboloRespuesta.contains('\\chi^2')) ? "Muestra" : "X1"),
+                              : ((simboloRespuesta.contains('P_val') || simboloRespuesta.contains('\\chi^2')) ? "Estadístico" : "X1"),
                           etiquetaX2: simboloRespuesta.contains('IC') ? "L. Sup" : "X2",
                         ),
                         // 4. Si es Correlación (Bivariada)

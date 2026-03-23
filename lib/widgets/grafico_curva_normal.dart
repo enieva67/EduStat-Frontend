@@ -191,6 +191,9 @@ class GraficoCurvaNormal extends StatelessWidget {
                       reservedSize: 30,
                       interval: intervaloIdeal, // <--- Aplicamos el espaciado perfecto
                       getTitlesWidget: (value, meta) {
+                         if (value == meta.min || value == meta.max) {
+                          return const SizedBox.shrink(); 
+                        }
                         // MAGIA UX 2: SMART FORMATTER
                         // Formateamos a 2 decimales, pero quitamos los ceros inútiles
                         String texto = value.toStringAsFixed(2);
