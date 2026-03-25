@@ -54,6 +54,7 @@ class _MainScreenState extends State<MainScreen> {
     'prueba_hipotesis': 'Prueba de Hipótesis (Media)', // <--- NUEVA
     'chi2_bondad': 'Ji-Cuadrado (Bondad de Ajuste)',
     'chi2_independencia': 'Ji-Cuadrado (Independencia)',
+    'poder_estadistico': 'Poder y Tamaño de Muestra',
   };
 
   // NUEVO: Controladores para el formulario de Puntaje Z
@@ -91,7 +92,19 @@ class _MainScreenState extends State<MainScreen> {
 // CONTROLADORES PARA JI-CUADRADO
   final TextEditingController _chi2BondadObsCtrl = TextEditingController(text: "30; 10; 20");
   final TextEditingController _chi2BondadEspCtrl = TextEditingController(); // Vacío = Equiprobabilidad
+   // CONTROLADORES DE PODER
+  bool _calcularN = true;
+  bool _tengoDCohen = true; // <--- NUEVO INTERRUPTOR
   
+  final TextEditingController _poderCohenCtrl = TextEditingController(text: "0.5");
+  // NUEVOS CONTROLADORES DE MEDIAS REALES
+  final TextEditingController _poderMu0Ctrl = TextEditingController(text: "100");
+  final TextEditingController _poderMu1Ctrl = TextEditingController(text: "130");
+  final TextEditingController _poderSigmaCtrl = TextEditingController(text: "9"); 
+  
+  final TextEditingController _poderAlfaCtrl = TextEditingController(text: "0.05");
+  final TextEditingController _poderNCtrl = TextEditingController(text: "64");
+  final TextEditingController _poder1MinusBetaCtrl = TextEditingController(text: "0.80");
   // EL MOTOR DE LA MATRIZ DINÁMICA (Ji-Cuadrado)
   bool _tengoTablaChi2 = true;
   List<List<TextEditingController>> _matrizChi2 = [[TextEditingController(text: "15"), TextEditingController(text: "25")],[TextEditingController(text: "10"), TextEditingController(text: "30")],
@@ -567,6 +580,48 @@ void _enviarCorrelacion() {
       });
     }
   }
+  void _enviarPoderMuestra() {
+    double? alfa = double.tryParse(_poderAlfaCtrl.text.replaceAll(',', '.'));
+    if (alfa == null) { _mostrarMensaje("❌ Error: Verifica el valor de Alfa."); return; }
+
+    final parametros = {
+      "tipo_calculo": _calcularN ? "calcular_n" : "calcular_poder",
+      "tipo_ingreso": _tengoDCohen ? "d_cohen" : "medias_reales",
+      "alfa": alfa,
+    };
+
+    // LECTURA CONDICIONAL DEL EFECTO
+    if (_tengoDCohen) {
+      double? dCohen = double.tryParse(_poderCohenCtrl.text.replaceAll(',', '.'));
+      if (dCohen == null) { _mostrarMensaje("❌ Error: Verifica el Tamaño del Efecto (d)."); return; }
+      parametros["d_cohen"] = dCohen;
+    } else {
+      double? mu0 = double.tryParse(_poderMu0Ctrl.text.replaceAll(',', '.'));
+      double? mu1 = double.tryParse(_poderMu1Ctrl.text.replaceAll(',', '.'));
+      double? sigma = double.tryParse(_poderSigmaCtrl.text.replaceAll(',', '.'));
+      if (mu0 == null || mu1 == null || sigma == null) {
+        _mostrarMensaje("❌ Error: Verifica los datos de las Medias Reales y la Desviación."); return;
+      }
+      parametros["mu0"] = mu0;
+      parametros["mu1"] = mu1;
+      parametros["sigma"] = sigma;
+    }
+
+    // LECTURA CONDICIONAL DEL OBJETIVO
+    if (_calcularN) {
+      double? poder = double.tryParse(_poder1MinusBetaCtrl.text.replaceAll(',', '.'));
+      if (poder == null) { _mostrarMensaje("❌ Error: Ingresa el Poder deseado."); return; }
+      parametros["poder"] = poder;
+    } else {
+      double? n = double.tryParse(_poderNCtrl.text.replaceAll(',', '.'));
+      if (n == null) { _mostrarMensaje("❌ Error: Ingresa el Tamaño de Muestra."); return; }
+      parametros["n"] = n;
+    }
+
+    wsService.sendJson({
+      "id": "calculo_01", "accion": "calcular_poder_muestra", "parametros": parametros
+    });
+  }
   // 3. ENVÍO AL BACKEND: Formatea la caja antes de enviar por si el usuario tipeó
   void _enviarDatosSinAgrupar() {
     // Volvemos a limpiar por si el usuario escribió algo a mano
@@ -736,6 +791,13 @@ void _enviarCorrelacion() {
                 children:[
                   ListTile(title: const Text("Ji-Cuadrado (Bondad de Ajuste)"), onTap: () { setState(() => _medidaSeleccionada = 'chi2_bondad'); Navigator.pop(context); }),
                   ListTile(title: const Text("Ji-Cuadrado (Independencia)"), onTap: () { setState(() => _medidaSeleccionada = 'chi2_independencia'); Navigator.pop(context); }),
+                ],
+              ),
+              ExpansionTile(
+                leading: const Icon(Icons.battery_charging_full),
+                title: const Text('6. Poder Estadístico', style: TextStyle(fontWeight: FontWeight.bold)),
+                children:[
+                  ListTile(title: const Text("Poder y Tamaño de Muestra"), onTap: () { setState(() => _medidaSeleccionada = 'poder_estadistico'); Navigator.pop(context); }),
                 ],
               ),
             ],
@@ -1088,6 +1150,86 @@ void _enviarCorrelacion() {
                                     )
                                   ],
                                 )
+// 6. MÓDULO DE PODER ESTADÍSTICO
+                              : _medidaSeleccionada == 'poder_estadistico'
+                              ? Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children:[
+                                    const Text("Análisis de Poder (1 - β)", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green)),
+                                    const SizedBox(height: 15),
+                                    
+                                    // ==========================================
+                                    // INTERRUPTOR 1: ¿QUÉ DESEAS CALCULAR?
+                                    // ==========================================
+                                    Row(
+                                      children:[
+                                        const Text("¿Qué deseas calcular?", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.teal)),
+                                        Switch(
+                                          value: _calcularN, activeColor: Colors.teal, inactiveThumbColor: Colors.green,
+                                          onChanged: (val) => setState(() => _calcularN = val),
+                                        ),
+                                        Text(_calcularN ? "Tamaño de Muestra (n)" : "Poder del Test (1-β)", style: TextStyle(color: _calcularN ? Colors.teal : Colors.green.shade800, fontWeight: FontWeight.bold)),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 15),
+
+                                    // ==========================================
+                                    // INTERRUPTOR 2: ORIGEN DEL EFECTO
+                                    // ==========================================
+                                    Row(
+                                      children:[
+                                        const Text("Origen del Efecto:", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.teal)),
+                                        Switch(
+                                          value: _tengoDCohen, activeColor: Colors.teal, inactiveThumbColor: Colors.green,
+                                          onChanged: (val) => setState(() => _tengoDCohen = val),
+                                        ),
+                                        Text(_tengoDCohen ? "Tamaño de Efecto (d)" : "Medias Reales (μ₀ y μ₁)", style: TextStyle(color: _tengoDCohen ? Colors.teal : Colors.green.shade800, fontWeight: FontWeight.bold)),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 15),
+
+                                    // ==========================================
+                                    // CAMPOS DINÁMICOS SEGÚN INTERRUPTOR 2
+                                    // ==========================================
+                                    if (_tengoDCohen) ...[
+                                      TextField(controller: _poderCohenCtrl, decoration: const InputDecoration(labelText: "Tamaño del Efecto (d de Cohen, ej: 0.5)", prefixIcon: Icon(Icons.open_with), border: OutlineInputBorder(), isDense: true)),
+                                    ] else ...[
+                                      Row(
+                                        children:[
+                                          Expanded(child: TextField(controller: _poderMu0Ctrl, decoration: const InputDecoration(labelText: "Media Nula (μ₀)", prefixIcon: Icon(Icons.balance), border: OutlineInputBorder(), isDense: true))),
+                                          const SizedBox(width: 10),
+                                          Expanded(child: TextField(controller: _poderMu1Ctrl, decoration: const InputDecoration(labelText: "Media Alternativa (μ₁)", prefixIcon: Icon(Icons.flag), border: OutlineInputBorder(), isDense: true))),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 10),
+                                      TextField(controller: _poderSigmaCtrl, decoration: const InputDecoration(labelText: "Desviación Estándar (σ)", prefixIcon: Icon(Icons.compare_arrows), border: OutlineInputBorder(), isDense: true)),
+                                    ],
+                                    
+                                    const SizedBox(height: 10),
+                                    TextField(controller: _poderAlfaCtrl, decoration: const InputDecoration(labelText: "Riesgo de Falso Positivo (Alfa α)", prefixIcon: Icon(Icons.warning_amber), border: OutlineInputBorder(), isDense: true)),
+                                    const SizedBox(height: 10),
+
+                                    // ==========================================
+                                    // CAMPOS DINÁMICOS SEGÚN INTERRUPTOR 1
+                                    // ==========================================
+                                    if (_calcularN)
+                                      TextField(controller: _poder1MinusBetaCtrl, decoration: const InputDecoration(labelText: "Poder Deseado (1-β, ej: 0.80)", prefixIcon: Icon(Icons.battery_std), border: OutlineInputBorder(), isDense: true, filled: true, fillColor: Colors.greenAccent))
+                                    else
+                                      TextField(controller: _poderNCtrl, decoration: const InputDecoration(labelText: "Tamaño de Muestra Actual (n)", prefixIcon: Icon(Icons.group), border: OutlineInputBorder(), isDense: true, filled: true, fillColor: Colors.tealAccent)),
+                                      
+                                    const SizedBox(height: 20),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: ElevatedButton.icon(
+                                        icon: const Icon(Icons.model_training),
+                                        label: const Padding(padding: EdgeInsets.all(12.0), child: Text("Simular Poder Estadístico", style: TextStyle(fontSize: 16))),
+                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, elevation: 3),
+                                        onPressed: _enviarPoderMuestra,
+                                      ),
+                                    )
+                                  ],
+                                )
+
                                 // 5A. MÓDULO JI-CUADRADO (BONDAD DE AJUSTE)
                               : _medidaSeleccionada == 'chi2_bondad'
                               ? Column(
@@ -1480,6 +1622,32 @@ void _enviarCorrelacion() {
                   String subtituloGrafico = "";
                   String etiquetaGrafico = "Valor";
 
+                  // =================================================================
+                  // 1. AQUÍ DECLARAMOS LAS VARIABLES (AFUERA DEL LISTVIEW)
+                  // =================================================================
+                  bool esPoderEstadistico = result['tema'] != null && result['tema'].toString().contains('Poder');
+                  bool esPruebaHipotesis = simboloRespuesta.contains('P_val') || simboloRespuesta.contains('\\chi^2');
+
+                  String tituloCurva = "La Campana de Gauss";
+                  String subtituloCurva = "El paciente (línea dorada) obtuvo un Z =";
+                  String etiquetaX1Curva = "X1";
+                  if (esPoderEstadistico) {
+                    tituloCurva = "Zonas: Alfa (Rojo), Beta (Gris) y Poder (Verde)";
+                    subtituloCurva = "Línea Dorada = Valor Crítico de Alfa. Desplazamiento H₁ = ${result['paciente_z']}";
+                    etiquetaX1Curva = "Corte α";
+                  } else if (simboloRespuesta.contains('IC')) {
+                    tituloCurva = "Distribución Muestral (${result['percentil']}%)";
+                    subtituloCurva = "La zona dorada marca dónde podría estar la Media Poblacional (μ).";
+                    etiquetaX1Curva = "L. Inf";
+                  } else if (simboloRespuesta.contains('\\chi^2')) {
+                    tituloCurva = "Distribución Ji-Cuadrado (χ²)";
+                    subtituloCurva = "Tu estadístico (línea dorada) cayó en: ${(result['interpretacion'] ?? '').contains('NO RECHAZAMOS') ? 'Zona Segura' : 'ZONA DE PELIGRO (Rechazo)'}";
+                    etiquetaX1Curva = "Estadístico";
+                  } else if (simboloRespuesta.contains('P_val')) {
+                    tituloCurva = "Zonas de Rechazo (Alfa: ${result['percentil'] / 100})";
+                    subtituloCurva = "Tu muestra (línea dorada) cayó en: ${(result['interpretacion'] ?? '').contains('NO RECHAZAMOS') ? 'Zona Segura' : 'ZONA DE PELIGRO'}";
+                    etiquetaX1Curva = "Muestra";
+                  }
                   if (simboloRespuesta.contains('\\bar{x}')) {
                     tituloGrafico = "El Punto de Equilibrio (Media)";
                     subtituloGrafico = "La línea roja (Media) equilibra el peso de todos los pacientes.";
@@ -1559,6 +1727,11 @@ void _enviarCorrelacion() {
                       if (result['datos_histograma'] != null)
                         GraficoHistograma(datosHistograma: result['datos_histograma'], contexto: result['contexto'] ?? "Valores",),
                       const SizedBox(height: 40),
+                      // -----------------------------------------------------------------
+                      // LÓGICA DE UX PARA LA CURVA NORMAL (Títulos Dinámicos y Limpios)
+                      // -----------------------------------------------------------------
+                      
+                      
                       // 3. Si es Curva Normal, Intervalo, PRUEBA DE HIPÓTESIS o JI-CUADRADO
                       if (result['datos_curva'] != null)
                         GraficoCurvaNormal(
@@ -1572,20 +1745,15 @@ void _enviarCorrelacion() {
                           pacienteX2: result['paciente_x2'] != null ? (result['paciente_x2'] as num).toDouble() : null,
                           tipoArea: result['tipo_area'] ?? 'menor',
                           
-                          // ACTIVAMOS LA VARIABLE MÁGICA
-                          esPruebaHipotesis: simboloRespuesta.contains('P_val') || simboloRespuesta.contains('\\chi^2'),
+                          // ACTIVAMOS LAS VARIABLES MÁGICAS
+                          esPruebaHipotesis: esPruebaHipotesis,
+                          esPoderEstadistico: esPoderEstadistico, 
+                          datosCurva2: result['datos_curva2'], 
 
-                          titulo: simboloRespuesta.contains('IC') ? "Distribución Muestral (${result['percentil']}%)" 
-                              : (simboloRespuesta.contains('\\chi^2') ? "Distribución Ji-Cuadrado (χ²)" 
-                              : (simboloRespuesta.contains('P_val') ? "Zonas de Rechazo (Alfa: ${result['percentil'] / 100})" : "La Campana de Gauss")),
-                              
-                          // MAGIA DEFENSIVA: Usamos (result['interpretacion'] ?? '') para que nunca más crashee si viene nulo
-                          subtitulo: simboloRespuesta.contains('IC') ? "La zona dorada marca dónde podría estar la Media Poblacional (μ)." 
-                              : (simboloRespuesta.contains('\\chi^2') ? "Tu estadístico (línea dorada) cayó en: ${(result['interpretacion'] ?? '').contains('NO RECHAZAMOS') ? 'Zona Segura' : 'ZONA DE PELIGRO (Rechazo)'}" 
-                              : (simboloRespuesta.contains('P_val') ? "Tu muestra (línea dorada) cayó en: ${(result['interpretacion'] ?? '').contains('NO RECHAZAMOS') ? 'Zona Segura' : 'ZONA DE PELIGRO'}" : "El paciente (línea dorada) obtuvo un Z =")),
-                              
-                          etiquetaX1: simboloRespuesta.contains('IC') ? "L. Inf" 
-                              : ((simboloRespuesta.contains('P_val') || simboloRespuesta.contains('\\chi^2')) ? "Estadístico" : "X1"),
+                          // LE PASAMOS LOS TEXTOS LIMPIOS QUE CALCULAMOS ARRIBA
+                          titulo: tituloCurva,
+                          subtitulo: subtituloCurva,
+                          etiquetaX1: etiquetaX1Curva,
                           etiquetaX2: simboloRespuesta.contains('IC') ? "L. Sup" : "X2",
                         ),
                         // 4. Si es Correlación (Bivariada)

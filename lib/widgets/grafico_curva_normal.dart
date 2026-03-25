@@ -1,31 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-
 class GraficoCurvaNormal extends StatelessWidget {
-  final List<dynamic> sombreado3;
   final List<dynamic> datosCurva;
+  final List<dynamic>? datosCurva2; // <--- NUEVA: La campana de H1 (Opcional)
   final List<dynamic> sombreado1;
   final List<dynamic> sombreado2;
+  final List<dynamic> sombreado3;
   final double pacienteX;
   final double pacienteZ;
   final double percentil;
   final double? pacienteX2;
   final String tipoArea;
   
-  // NUEVAS VARIABLES DINÁMICAS
   final String titulo;
   final String subtitulo;
   final String etiquetaX1;
   final String etiquetaX2;
-  final bool esPruebaHipotesis; // <--- NUEVA VARIABLE MÁGICA
-  
+  final bool esPruebaHipotesis;
+  final bool esPoderEstadistico; // <--- NUEVA: Activa los colores Alfa, Beta y Poder
 
   const GraficoCurvaNormal({
     super.key,
     required this.datosCurva,
+    this.datosCurva2, // <--- NUEVA
     required this.sombreado1,
     required this.sombreado2,
-    this.sombreado3 = const[], // <--- NUEVO (Lo ponemos opcional y vacío por defecto)
+    this.sombreado3 = const[], 
     required this.pacienteX,
     required this.pacienteZ,
     required this.percentil,
@@ -35,9 +35,9 @@ class GraficoCurvaNormal extends StatelessWidget {
     this.subtitulo = "El paciente (línea dorada) obtuvo un Z =",
     this.etiquetaX1 = "X1",
     this.etiquetaX2 = "X2",
-    this.esPruebaHipotesis = false, // <--- Por defecto es falso (Mantiene el dorado de Dubái)
+    this.esPruebaHipotesis = false,
+    this.esPoderEstadistico = false, // <--- NUEVA (Por defecto falso)
   });
-
   // Función auxiliar para mapear JSON a FlSpots
   List<FlSpot> _mapearPuntos(List<dynamic> jsonList) {
     final List<FlSpot> spots = List.empty(growable: true);
@@ -50,31 +50,39 @@ class GraficoCurvaNormal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (datosCurva.isEmpty) return const SizedBox.shrink();
-    final spotsSombreado3 = _mapearPuntos(sombreado3);
 
     final spotsPrincipal = _mapearPuntos(datosCurva);
+    final spotsSecundaria = datosCurva2 != null ? _mapearPuntos(datosCurva2!) : <FlSpot>[]; // <--- NUEVA
     final spotsSombreado1 = _mapearPuntos(sombreado1);
     final spotsSombreado2 = _mapearPuntos(sombreado2);
+    final spotsSombreado3 = _mapearPuntos(sombreado3);
 
     double maxY = 0;
-    for (var spot in spotsPrincipal) {
-      if (spot.y > maxY) maxY = spot.y;
+    for (var spot in spotsPrincipal) { if (spot.y > maxY) maxY = spot.y; }
+    for (var spot in spotsSecundaria) { if (spot.y > maxY) maxY = spot.y; } // <--- Revisamos H1 también
+
+    double minX = spotsPrincipal.first.x;
+    double maxX = spotsPrincipal.last.x;
+    if (spotsSecundaria.isNotEmpty) {
+      if (spotsSecundaria.first.x < minX) minX = spotsSecundaria.first.x;
+      if (spotsSecundaria.last.x > maxX) maxX = spotsSecundaria.last.x;
     }
-
-    final double minX = spotsPrincipal.first.x;
-    final double maxX = spotsPrincipal.last.x;
-
     double intervaloIdeal = (maxX - minX) / 6;
     if (intervaloIdeal <= 0) intervaloIdeal = 1.0; // Seguro por si acaso
-// MAGIA UX: Colores Dinámicos según el tema
-    final Gradient gradienteSombreado1 = esPruebaHipotesis
-        ? LinearGradient(colors:[Colors.teal.withOpacity(0.3), Colors.teal.withOpacity(0.0)], begin: Alignment.topCenter, end: Alignment.bottomCenter)
-        : LinearGradient(colors: [Colors.amber.withOpacity(0.7), Colors.amber.withOpacity(0.1)], begin: Alignment.topCenter, end: Alignment.bottomCenter);
+// MAGIA UX: Colores Dinámicos
+    final Gradient gradienteSombreado1 = esPoderEstadistico 
+        ? LinearGradient(colors:[Colors.redAccent.withOpacity(0.6), Colors.redAccent.withOpacity(0.1)], begin: Alignment.topCenter, end: Alignment.bottomCenter) // ALFA (Rojo)
+        : (esPruebaHipotesis ? LinearGradient(colors:[Colors.teal.withOpacity(0.3), Colors.teal.withOpacity(0.0)], begin: Alignment.topCenter, end: Alignment.bottomCenter)
+                             : LinearGradient(colors:[Colors.amber.withOpacity(0.7), Colors.amber.withOpacity(0.1)], begin: Alignment.topCenter, end: Alignment.bottomCenter));
 
-    final Gradient gradienteSombreado2 = esPruebaHipotesis
-        ? LinearGradient(colors:[Colors.redAccent.withOpacity(0.7), Colors.redAccent.withOpacity(0.2)], begin: Alignment.topCenter, end: Alignment.bottomCenter)
-        : LinearGradient(colors:[Colors.amber.withOpacity(0.7), Colors.amber.withOpacity(0.1)], begin: Alignment.topCenter, end: Alignment.bottomCenter);
+    final Gradient gradienteSombreado2 = esPoderEstadistico
+        ? LinearGradient(colors:[Colors.grey.withOpacity(0.7), Colors.grey.withOpacity(0.2)], begin: Alignment.topCenter, end: Alignment.bottomCenter) // BETA (Gris)
+        : (esPruebaHipotesis ? LinearGradient(colors:[Colors.redAccent.withOpacity(0.7), Colors.redAccent.withOpacity(0.2)], begin: Alignment.topCenter, end: Alignment.bottomCenter)
+                             : LinearGradient(colors:[Colors.amber.withOpacity(0.7), Colors.amber.withOpacity(0.1)], begin: Alignment.topCenter, end: Alignment.bottomCenter));
 
+    final Gradient gradienteSombreado3 = esPoderEstadistico
+        ? LinearGradient(colors:[Colors.green.withOpacity(0.6), Colors.green.withOpacity(0.1)], begin: Alignment.topCenter, end: Alignment.bottomCenter) // PODER (Verde)
+        : gradienteSombreado2; // Para pruebas de hipótesis de 2 colas, usa el mismo rojo
     return Container(
       height: 380,
       padding: const EdgeInsets.all(20),
@@ -126,7 +134,7 @@ class GraficoCurvaNormal extends StatelessWidget {
                           padding: const EdgeInsets.only(left: 12, bottom: 15),
                           style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 14),
                           // Usamos la etiqueta dinámica (Dirá "Muestra=" o "X1=")
-                          labelResolver: (line) => "$etiquetaX1=$pacienteX",
+                           labelResolver: (line) => "$etiquetaX1=${pacienteX.toStringAsFixed(2)}",
                         ),
                       ),
                       
@@ -142,7 +150,7 @@ class GraficoCurvaNormal extends StatelessWidget {
                           alignment: Alignment.topRight, 
                           padding: const EdgeInsets.only(left: 12, bottom: 35),
                           style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 14),
-                          labelResolver: (line) => "$etiquetaX2=$pacienteX2",
+                          labelResolver: (line) => "$etiquetaX2=${pacienteX2!.toStringAsFixed(2)}",
                         ),
                       )
                   ]
@@ -153,6 +161,13 @@ class GraficoCurvaNormal extends StatelessWidget {
                     spots: spotsPrincipal, isCurved: true, color: Colors.deepPurple, barWidth: 3,
                     isStrokeCapRound: true, dotData: const FlDotData(show: false),
                   ),
+                  
+                  // 1.5 La Segunda Campana (H1 - Azul/Teal) <--- NUEVO
+                  if (spotsSecundaria.isNotEmpty)
+                    LineChartBarData(
+                      spots: spotsSecundaria, isCurved: true, color: Colors.blueAccent, barWidth: 3,
+                      isStrokeCapRound: true, dotData: const FlDotData(show: false),
+                    ),
                   // 2. La capa del Sombreado 1 (Centro / Zona Segura)
                   if (spotsSombreado1.isNotEmpty)
                     LineChartBarData(
@@ -172,7 +187,7 @@ class GraficoCurvaNormal extends StatelessWidget {
                     LineChartBarData(
                       spots: spotsSombreado3, isCurved: true, color: Colors.transparent, barWidth: 0,
                       dotData: const FlDotData(show: false),
-                      belowBarData: BarAreaData(show: true, gradient: gradienteSombreado2), // Usa el MISMO gradiente rojo
+                      belowBarData: BarAreaData(show: true, gradient: gradienteSombreado3), // Usa el MISMO gradiente rojo
                     ),
                 ],
                 titlesData: FlTitlesData(
