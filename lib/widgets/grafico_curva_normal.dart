@@ -71,17 +71,17 @@ class GraficoCurvaNormal extends StatelessWidget {
     if (intervaloIdeal <= 0) intervaloIdeal = 1.0; // Seguro por si acaso
 // MAGIA UX: Colores Dinámicos
     final Gradient gradienteSombreado1 = esPoderEstadistico 
-        ? LinearGradient(colors:[Colors.redAccent.withOpacity(0.6), Colors.redAccent.withOpacity(0.1)], begin: Alignment.topCenter, end: Alignment.bottomCenter) // ALFA (Rojo)
-        : (esPruebaHipotesis ? LinearGradient(colors:[Colors.teal.withOpacity(0.3), Colors.teal.withOpacity(0.0)], begin: Alignment.topCenter, end: Alignment.bottomCenter)
-                             : LinearGradient(colors:[Colors.amber.withOpacity(0.7), Colors.amber.withOpacity(0.1)], begin: Alignment.topCenter, end: Alignment.bottomCenter));
+        ? LinearGradient(colors:[Colors.redAccent.withValues(alpha: 0.6), Colors.redAccent.withValues(alpha: 0.1)], begin: Alignment.topCenter, end: Alignment.bottomCenter) // ALFA (Rojo)
+        : (esPruebaHipotesis ? LinearGradient(colors:[Colors.teal.withValues(alpha: 0.3), Colors.teal.withValues(alpha: 0.0)], begin: Alignment.topCenter, end: Alignment.bottomCenter)
+                             : LinearGradient(colors:[Colors.amber.withValues(alpha: 0.7), Colors.amber.withValues(alpha: 0.1)], begin: Alignment.topCenter, end: Alignment.bottomCenter));
 
     final Gradient gradienteSombreado2 = esPoderEstadistico
-        ? LinearGradient(colors:[Colors.grey.withOpacity(0.7), Colors.grey.withOpacity(0.2)], begin: Alignment.topCenter, end: Alignment.bottomCenter) // BETA (Gris)
-        : (esPruebaHipotesis ? LinearGradient(colors:[Colors.redAccent.withOpacity(0.7), Colors.redAccent.withOpacity(0.2)], begin: Alignment.topCenter, end: Alignment.bottomCenter)
-                             : LinearGradient(colors:[Colors.amber.withOpacity(0.7), Colors.amber.withOpacity(0.1)], begin: Alignment.topCenter, end: Alignment.bottomCenter));
+        ? LinearGradient(colors:[Colors.grey.withValues(alpha:0.7), Colors.grey.withValues(alpha: 0.2)], begin: Alignment.topCenter, end: Alignment.bottomCenter) // BETA (Gris)
+        : (esPruebaHipotesis ? LinearGradient(colors:[Colors.redAccent.withValues(alpha: 0.7), Colors.redAccent.withValues(alpha: 0.2)], begin: Alignment.topCenter, end: Alignment.bottomCenter)
+                             : LinearGradient(colors:[Colors.amber.withValues(alpha: 0.7), Colors.amber.withValues(alpha: 0.1)], begin: Alignment.topCenter, end: Alignment.bottomCenter));
 
     final Gradient gradienteSombreado3 = esPoderEstadistico
-        ? LinearGradient(colors:[Colors.green.withOpacity(0.6), Colors.green.withOpacity(0.1)], begin: Alignment.topCenter, end: Alignment.bottomCenter) // PODER (Verde)
+        ? LinearGradient(colors:[Colors.green.withValues(alpha: 0.6), Colors.green.withValues(alpha: 0.1)], begin: Alignment.topCenter, end: Alignment.bottomCenter) // PODER (Verde)
         : gradienteSombreado2; // Para pruebas de hipótesis de 2 colas, usa el mismo rojo
     return Container(
       height: 380,
@@ -89,7 +89,7 @@ class GraficoCurvaNormal extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white, borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.amber.shade300, width: 2),
-        boxShadow:[BoxShadow(color: Colors.deepPurple.withOpacity(0.1), blurRadius: 15, spreadRadius: 5)]
+        boxShadow:[BoxShadow(color: Colors.deepPurple.withValues(alpha: 0.1), blurRadius: 15, spreadRadius: 5)]
       ),
       child: Column(
         children:[

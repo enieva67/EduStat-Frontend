@@ -36,9 +36,9 @@ class GraficoMediaAritmetica extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.teal.withOpacity(0.3)),
+        border: Border.all(color: Colors.teal.withValues(alpha: 0.3)),
         boxShadow:[
-          BoxShadow(color: Colors.grey.withOpacity(0.1), blurRadius: 10, spreadRadius: 2)
+          BoxShadow(color: Colors.grey.withValues(alpha: 0.1), blurRadius: 10, spreadRadius: 2)
         ]
       ),
       child: Column(
@@ -79,7 +79,7 @@ class GraficoMediaAritmetica extends StatelessWidget {
                       getDotPainter: (spot, percent, barData, index) =>
                           FlDotCirclePainter(
                             radius: 6,
-                            color: Colors.blueAccent.withOpacity(0.7),
+                            color: Colors.blueAccent.withValues(alpha: 0.7),
                             strokeWidth: 1,
                             strokeColor: Colors.white,
                           ),

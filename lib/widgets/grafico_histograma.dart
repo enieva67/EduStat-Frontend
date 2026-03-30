@@ -29,10 +29,10 @@ class GraficoHistograma extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.deepPurple.withOpacity(0.3)),
+        border: Border.all(color: Colors.deepPurple.withValues(alpha: 0.3)),
         boxShadow:[
           BoxShadow(
-            color: Colors.deepPurple.withOpacity(0.05),
+            color: Colors.deepPurple.withValues(alpha: 0.05),
             blurRadius: 10,
             spreadRadius: 2,
           )
@@ -131,7 +131,7 @@ class GraficoHistograma extends StatelessWidget {
                   show: true,
                   drawVerticalLine: false,
                   horizontalInterval: 2, // Líneas guía horizontales
-                  getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey.withOpacity(0.2), strokeWidth: 1),
+                  getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey.withValues(alpha: 0.2), strokeWidth: 1),
                 ),
                 borderData: FlBorderData(
                   show: true,
@@ -152,7 +152,7 @@ class GraficoHistograma extends StatelessWidget {
                     barRods:[
                       BarChartRodData(
                         toY: freq,
-                        color: Colors.deepPurple.withOpacity(0.7),
+                        color: Colors.deepPurple.withValues(alpha: 0.3),
                         width: 60, // Ancho generoso para que se toquen
                         borderRadius: BorderRadius.zero, // TOPE PLANO, típico de Histograma
                         borderSide: const BorderSide(color: Colors.white, width: 1), // Línea divisoria blanca para distinguir los bloques

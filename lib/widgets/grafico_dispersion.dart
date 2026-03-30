@@ -55,8 +55,8 @@ class GraficoDispersion extends StatelessWidget {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white, borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.blueAccent.withOpacity(0.3), width: 2),
-        boxShadow:[BoxShadow(color: Colors.blue.withOpacity(0.05), blurRadius: 10, spreadRadius: 2)]
+        border: Border.all(color: Colors.blueAccent.withValues(alpha: 0.3), width: 2),
+        boxShadow:[BoxShadow(color: Colors.blue.withValues(alpha: 0.05), blurRadius: 10, spreadRadius: 2)]
       ),
       child: Column(
         children:[
@@ -73,7 +73,7 @@ class GraficoDispersion extends StatelessWidget {
                   // 1. La línea de tendencia (continua y suave)
                   LineChartBarData(
                     spots:[puntoInicio, puntoFin],
-                    isCurved: false, color: Colors.blueAccent.withOpacity(0.5),
+                    isCurved: false, color: Colors.blueAccent.withValues(alpha: 0.5),
                     barWidth: 2, dotData: const FlDotData(show: false),
                   ),
                   // 2. Los puntos (Engañamos al LineChart poniéndole línea transparente)
@@ -96,7 +96,7 @@ class GraficoDispersion extends StatelessWidget {
                     sideTitles: const SideTitles(showTitles: true, reservedSize: 40),
                   ),
                 ),
-                gridData: FlGridData(show: true, drawVerticalLine: true, getDrawingHorizontalLine: (val) => FlLine(color: Colors.grey.withOpacity(0.2), strokeWidth: 1), getDrawingVerticalLine: (val) => FlLine(color: Colors.grey.withOpacity(0.2), strokeWidth: 1)),
+                gridData: FlGridData(show: true, drawVerticalLine: true, getDrawingHorizontalLine: (val) => FlLine(color: Colors.grey.withValues(alpha: 0.3), strokeWidth: 1), getDrawingVerticalLine: (val) => FlLine(color: Colors.grey.withValues(alpha: 0.2), strokeWidth: 1)),
                 borderData: FlBorderData(show: true, border: const Border(bottom: BorderSide(color: Colors.black45), left: BorderSide(color: Colors.black45))),
                 lineTouchData: LineTouchData(
                   enabled: true,
